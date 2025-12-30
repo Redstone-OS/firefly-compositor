@@ -1,6 +1,7 @@
 //! # Firefly Compositor
 //!
 //! Compositor gráfico do RedstoneOS.
+//! Gerencia janelas e compõe no framebuffer.
 
 #![no_std]
 #![no_main]
@@ -11,46 +12,48 @@ use core::panic::PanicInfo;
 use redpowder::graphics::{Color, Framebuffer};
 use redpowder::println;
 
+// ============================================================================
+// CONSTANTES
+// ============================================================================
+
 /// Cor de fundo coral (#EE6A50)
 const BG_COLOR: Color = Color::ORANGE;
+
+/// Nome da porta do compositor
+const COMPOSITOR_PORT: &str = "firefly.compositor";
+
+// ============================================================================
+// ENTRADA
+// ============================================================================
 
 #[no_mangle]
 #[link_section = ".text._start"]
 pub extern "C" fn _start() -> ! {
-    println!("[Firefly] Start!");
+    println!("[Firefly] Compositor starting...");
 
     // Inicializar framebuffer
     if let Ok(mut fb) = Framebuffer::new() {
         println!("[Firefly] FB OK");
-        let _ = fb.clear(BG_COLOR);
-        println!("[Firefly] Clear OK");
 
-        // Desenhar retângulo simples (janela de teste)
+        // Limpar tela com fundo
+        let _ = fb.clear(BG_COLOR);
+        println!("[Firefly] Background cleared");
+
+        // Desenhar cursor no centro
         let w = fb.width();
         let h = fb.height();
-        let win_x = w / 4;
-        let win_y = h / 4;
-        let win_w = w / 2;
-        let win_h = h / 2;
+        cursor::draw(&mut fb, (w / 2) as i32, (h / 2) as i32);
+        println!("[Firefly] Cursor drawn");
 
-        // Borda da janela
-        for x in win_x..(win_x + win_w) {
-            let _ = fb.put_pixel(x, win_y, Color::WHITE);
-            let _ = fb.put_pixel(x, win_y + win_h - 1, Color::WHITE);
+        // TODO: Criar porta para receber mensagens de clientes
+        // Por enquanto, apenas mostra o fundo e cursor
+        println!("[Firefly] Ready!");
+
+        // Loop principal do compositor
+        // Faz yield para permitir que outros processos executem
+        loop {
+            redpowder::process::yield_now();
         }
-        for y in win_y..(win_y + win_h) {
-            let _ = fb.put_pixel(win_x, y, Color::WHITE);
-            let _ = fb.put_pixel(win_x + win_w - 1, y, Color::WHITE);
-        }
-
-        println!("[Firefly] Window done!");
-
-        // Desenhar cursor no centro da tela
-        let cursor_x = (w / 2) as i32;
-        let cursor_y = (h / 2) as i32;
-        cursor::draw(&mut fb, cursor_x, cursor_y);
-
-        println!("[Firefly] Cursor drawn!");
     } else {
         println!("[Firefly] FB FAIL");
     }
@@ -60,6 +63,10 @@ pub extern "C" fn _start() -> ! {
         core::hint::spin_loop();
     }
 }
+
+// ============================================================================
+// PANIC HANDLER
+// ============================================================================
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
