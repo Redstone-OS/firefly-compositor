@@ -3,7 +3,10 @@ ENTRY(_start)
 SECTIONS {
     . = 0x400000;
 
+    /* Forçar _start a ser o primeiro símbolo */
     .text : ALIGN(4096) {
+        KEEP(*(.text._start))
+        KEEP(*(.text.start))
         *(.text .text.*)
     }
 

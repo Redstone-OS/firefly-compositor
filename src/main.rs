@@ -8,42 +8,51 @@
 use core::panic::PanicInfo;
 use redpowder::graphics::{Color, Framebuffer};
 use redpowder::println;
-use redpowder::process::yield_now;
 
 /// Cor de fundo coral (#EE6A50)
 const BG_COLOR: Color = Color::ORANGE;
 
 #[no_mangle]
+#[link_section = ".text._start"]
 pub extern "C" fn _start() -> ! {
-    println!("[Firefly] Compositor starting...");
+    println!("[Firefly] Start!");
 
     // Inicializar framebuffer
-    let mut fb = match Framebuffer::new() {
-        Ok(f) => {
-            println!("[Firefly] FB OK");
-            f
-        }
-        Err(_) => {
-            println!("[Firefly] FB FAIL");
-            loop {
-                let _ = yield_now();
-            }
-        }
-    };
+    if let Ok(mut fb) = Framebuffer::new() {
+        println!("[Firefly] FB OK");
+        let _ = fb.clear(BG_COLOR);
+        println!("[Firefly] Clear OK");
 
-    // Limpar com cor de fundo
-    println!("[Firefly] Clearing...");
-    let _ = fb.clear(BG_COLOR);
-    println!("[Firefly] Screen coral!");
+        // Desenhar retângulo simples inline
+        let w = fb.width();
+        let h = fb.height();
+        let win_x = w / 4;
+        let win_y = h / 4;
+        let win_w = w / 2;
+        let win_h = h / 2;
 
-    // Loop principal
+        // Apenas a borda para simplificar
+        for x in win_x..(win_x + win_w) {
+            let _ = fb.put_pixel(x, win_y, Color::WHITE);
+            let _ = fb.put_pixel(x, win_y + win_h - 1, Color::WHITE);
+        }
+        for y in win_y..(win_y + win_h) {
+            let _ = fb.put_pixel(win_x, y, Color::WHITE);
+            let _ = fb.put_pixel(win_x + win_w - 1, y, Color::WHITE);
+        }
+
+        println!("[Firefly] Window done!");
+    } else {
+        println!("[Firefly] FB FAIL");
+    }
+
+    println!("[Firefly] Done!");
     loop {
-        let _ = yield_now();
+        core::hint::spin_loop();
     }
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    println!("[Firefly] PANIC!");
     loop {}
 }
