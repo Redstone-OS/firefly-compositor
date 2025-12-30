@@ -5,6 +5,8 @@
 #![no_std]
 #![no_main]
 
+mod cursor;
+
 use core::panic::PanicInfo;
 use redpowder::graphics::{Color, Framebuffer};
 use redpowder::println;
@@ -23,7 +25,7 @@ pub extern "C" fn _start() -> ! {
         let _ = fb.clear(BG_COLOR);
         println!("[Firefly] Clear OK");
 
-        // Desenhar retângulo simples inline
+        // Desenhar retângulo simples (janela de teste)
         let w = fb.width();
         let h = fb.height();
         let win_x = w / 4;
@@ -31,7 +33,7 @@ pub extern "C" fn _start() -> ! {
         let win_w = w / 2;
         let win_h = h / 2;
 
-        // Apenas a borda para simplificar
+        // Borda da janela
         for x in win_x..(win_x + win_w) {
             let _ = fb.put_pixel(x, win_y, Color::WHITE);
             let _ = fb.put_pixel(x, win_y + win_h - 1, Color::WHITE);
@@ -42,6 +44,13 @@ pub extern "C" fn _start() -> ! {
         }
 
         println!("[Firefly] Window done!");
+
+        // Desenhar cursor no centro da tela
+        let cursor_x = (w / 2) as i32;
+        let cursor_y = (h / 2) as i32;
+        cursor::draw(&mut fb, cursor_x, cursor_y);
+
+        println!("[Firefly] Cursor drawn!");
     } else {
         println!("[Firefly] FB FAIL");
     }
