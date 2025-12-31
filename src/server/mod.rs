@@ -205,17 +205,12 @@ impl Server {
             }
         };
 
-        // Inicializar memória com PRETO (0xFF000000) para ser visível antes do cliente desenhar
+        // Inicializar memória com PRETO (0xFF000000)
         let pixel_count = (req.width * req.height) as usize;
-        crate::println!(
-            "[Server] Inicializando SHM: ptr={:p}, pixels={}",
-            shm.as_mut_ptr(),
-            pixel_count
-        );
         let pixels =
             unsafe { core::slice::from_raw_parts_mut(shm.as_mut_ptr() as *mut u32, pixel_count) };
         for pixel in pixels.iter_mut() {
-            *pixel = 0xFF000000; // Preto opaco
+            *pixel = 0xFF000000;
         }
         // Verificar se escrevemos corretamente
         crate::println!("[Server] Primeiro pixel apos init: {:#x}", pixels[0]);

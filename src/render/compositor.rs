@@ -13,8 +13,8 @@ use redpowder::ipc::SharedMemory;
 use redpowder::syscall::SysResult;
 
 /// Cor de fundo padrão.
-// Cor de fundo: azul escuro para diferenciar das janelas
-const BACKGROUND_COLOR: Color = Color(0xFF1a1a2e);
+/// Cor de fundo padrão (quando não há wallpaper)
+const BACKGROUND_COLOR: Color = Color(0xFF2d2d2d);
 
 /// Motor de renderização.
 pub struct RenderEngine {
@@ -149,15 +149,6 @@ impl RenderEngine {
             size,
             Rect::from_size(size),
             BACKGROUND_COLOR,
-        );
-
-        // TESTE: Desenhar retângulo vermelho para confirmar que o backbuffer funciona
-        let test_rect = Rect::new(50, 50, 200, 100);
-        Blitter::fill_rect(
-            &mut self.backbuffer,
-            size,
-            test_rect,
-            Color(0xFFFF0000), // Vermelho
         );
 
         // 2. Coletar IDs de TODAS as janelas (bypass layer system for now)
