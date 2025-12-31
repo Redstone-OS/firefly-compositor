@@ -74,19 +74,42 @@ impl Server {
                 // Obter handle SHM
                 let shm_handle = self.compositor.get_surface_shm(surface_id);
 
-                // Responder
-                let _resp = WindowCreatedResponse {
-                    op: opcodes::WINDOW_CREATED,
-                    window_id: surface_id,
-                    shm_handle: shm_handle.0, // Unwrap wrapper
-                    buffer_size: (req.width * req.height * 4) as u64,
-                };
+                // Tentar responder via reply_port
+                let name_len = req
+                    .reply_port
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(req.reply_port.len());
+                if let Ok(name) = core::str::from_utf8(&req.reply_port[0..name_len]) {
+                    // Tenta conectar
+                    if let Ok(reply_port) = Port::connect(name) {
+                        let resp = WindowCreatedResponse {
+                            op: opcodes::WINDOW_CREATED,
+                            window_id: surface_id,
+                            shm_handle: shm_handle.0, // Unwrap wrapper
+                            buffer_size: (req.width * req.height * 4) as u64,
+                        };
 
-                // TODO: Enviar resposta para a PORTA DO CLIENTE.
-                // Atualmente, Port::recv não nos dá o remetente.
-                // Precisamos de um mecanismo de "sessão" ou "client_fd".
+                        let resp_bytes = unsafe {
+                            core::slice::from_raw_parts(
+                                &resp as *const _ as *const u8,
+                                core::mem::size_of::<WindowCreatedResponse>(),
+                            )
+                        };
 
-                crate::println!("Window created: {}", surface_id);
+                        // Envia resposta (não bloqueante ou timeout curto)
+                        let _ = reply_port.send(resp_bytes, 0);
+
+                        // TODO: Salvar reply_port para enviar eventos?
+                        // Seria ideal ter map<surface_id, port_name>
+
+                        crate::println!("Window created: {} (client: {})", surface_id, name);
+                    } else {
+                        crate::println!("Failed to connect to client port: {}", name);
+                    }
+                } else {
+                    crate::println!("Invalid reply port name");
+                }
             }
             opcodes::COMMIT_BUFFER => {
                 let req = unsafe { msg.buf_req };
