@@ -2,7 +2,8 @@
 //!
 //! Desenha decorações de janela (título, bordas, botões).
 
-use redpowder::graphics::{Color, Framebuffer};
+use crate::render::Backbuffer;
+use redpowder::graphics::Color;
 
 // ============================================================================
 // CONSTANTES
@@ -27,7 +28,7 @@ const BTN_CLOSE_COLOR: Color = Color::rgb(232, 17, 35); // Vermelho
 
 /// Desenha a decoração completa de uma janela
 pub fn draw_window_decoration(
-    fb: &mut Framebuffer,
+    fb: &mut Backbuffer,
     x: u32,
     y: u32,
     w: u32,
@@ -49,26 +50,32 @@ pub fn draw_window_decoration(
     // Borda (retângulo preenchido maior - retângulo menor)
     // Ou desenhando 4 retângulos.
     // Top (Título)
-    let _ = fb.fill_rect(x, y, w, TITLEBAR_HEIGHT, title_color);
+    fb.fill_rect(x as i32, y as i32, w, TITLEBAR_HEIGHT, title_color);
 
     // Left
-    let _ = fb.fill_rect(
-        x,
-        y + TITLEBAR_HEIGHT,
+    fb.fill_rect(
+        x as i32,
+        (y + TITLEBAR_HEIGHT) as i32,
         BORDER_WIDTH,
         h - TITLEBAR_HEIGHT,
         border_color,
     );
     // Right
-    let _ = fb.fill_rect(
-        x + w - BORDER_WIDTH,
-        y + TITLEBAR_HEIGHT,
+    fb.fill_rect(
+        (x + w - BORDER_WIDTH) as i32,
+        (y + TITLEBAR_HEIGHT) as i32,
         BORDER_WIDTH,
         h - TITLEBAR_HEIGHT,
         border_color,
     );
     // Bottom
-    let _ = fb.fill_rect(x, y + h - BORDER_WIDTH, w, BORDER_WIDTH, border_color);
+    fb.fill_rect(
+        x as i32,
+        (y + h - BORDER_WIDTH) as i32,
+        w,
+        BORDER_WIDTH,
+        border_color,
+    );
 
     // Botão Fechar (X)
     draw_close_button(fb, x + w - BTN_SIZE - 2, y + 2);
@@ -76,13 +83,16 @@ pub fn draw_window_decoration(
     // Título (texto simples - placeholder)
     // Como não temos fonte aqui (estava no shell), vamos desenhar um indicador simples
     // 3 pontos brancos
-    let _ = fb.fill_rect(x + 10, y + 10, 4, 4, TEXT_COLOR);
-    let _ = fb.fill_rect(x + 16, y + 10, 4, 4, TEXT_COLOR);
-    let _ = fb.fill_rect(x + 22, y + 10, 4, 4, TEXT_COLOR);
+    // Título (texto simples - placeholder)
+    // Como não temos fonte aqui (estava no shell), vamos desenhar um indicador simples
+    // 3 pontos brancos
+    fb.fill_rect((x + 10) as i32, (y + 10) as i32, 4, 4, TEXT_COLOR);
+    fb.fill_rect((x + 16) as i32, (y + 10) as i32, 4, 4, TEXT_COLOR);
+    fb.fill_rect((x + 22) as i32, (y + 10) as i32, 4, 4, TEXT_COLOR);
 }
 
-fn draw_close_button(fb: &mut Framebuffer, x: u32, y: u32) {
-    let _ = fb.fill_rect(x, y, BTN_SIZE, BTN_SIZE, BTN_CLOSE_COLOR);
+fn draw_close_button(fb: &mut Backbuffer, x: u32, y: u32) {
+    fb.fill_rect(x as i32, y as i32, BTN_SIZE, BTN_SIZE, BTN_CLOSE_COLOR);
     // X branco simples
     // diagonal 1
     let x_start = x + 4;
@@ -90,7 +100,11 @@ fn draw_close_button(fb: &mut Framebuffer, x: u32, y: u32) {
     let size = BTN_SIZE - 8;
 
     for i in 0..size {
-        let _ = fb.put_pixel(x_start + i, y_start + i, Color::WHITE);
-        let _ = fb.put_pixel(x_start + size - 1 - i, y_start + i, Color::WHITE);
+        fb.put_pixel((x_start + i) as i32, (y_start + i) as i32, Color::WHITE);
+        fb.put_pixel(
+            (x_start + size - 1 - i) as i32,
+            (y_start + i) as i32,
+            Color::WHITE,
+        );
     }
 }

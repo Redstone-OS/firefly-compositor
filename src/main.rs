@@ -8,9 +8,11 @@
 
 extern crate alloc;
 
-mod cursor;
-mod decoration;
+mod render;
+mod ui;
 
+use crate::render::Backbuffer;
+use crate::ui::{cursor, decoration};
 use alloc::vec::Vec;
 use core::panic::PanicInfo;
 use redpowder::graphics::{Color, Framebuffer};
@@ -34,10 +36,13 @@ const COMPOSITOR_PORT: &str = "firefly.compositor";
 // ============================================================================
 
 struct Compositor {
-    fb: Framebuffer,
+    #[allow(dead_code)]
+    hw_fb: Framebuffer, // Usado para obter info, mas desenho é feito no backbuffer
+    backbuffer: Backbuffer,
     windows: Vec<WindowInfo>,
     cursor_x: i32,
     cursor_y: i32,
+    dirty: bool,
 }
 
 /// Informações de uma janela gerenciada
@@ -54,9 +59,12 @@ struct WindowInfo {
 
 impl Compositor {
     fn new() -> Result<Self, ()> {
-        let fb = Framebuffer::new().map_err(|_| ())?;
-        let screen_w = fb.width();
-        let screen_h = fb.height();
+        let hw_fb = Framebuffer::new().map_err(|_| ())?;
+        let screen_w = hw_fb.width();
+        let screen_h = hw_fb.height();
+
+        // Criar Backbuffer em RAM
+        let backbuffer = Backbuffer::new(screen_w, screen_h);
 
         // Janela de teste (Terminal Placeholder)
         // Isso simula o terminal que será desenhado na tela
@@ -77,34 +85,44 @@ impl Compositor {
         };
 
         Ok(Self {
-            fb,
+            hw_fb,
+            backbuffer,
             windows: alloc::vec![test_window],
             cursor_x: (screen_w / 2) as i32,
             cursor_y: (screen_h / 2) as i32,
+            dirty: true, // Forçar primeiro redesenho
         })
     }
 
     fn draw_screen(&mut self) {
-        // 1. Limpa fundo (caso Shell não tenha desenhado wallpaper)
+        if !self.dirty {
+            return;
+        }
+
+        // 1. Limpa fundo (no backbuffer)
         // Como o Shell é cooperativo, não limpamos para não piscar o wallpaper dele
         // Mas se não houver shell, ficaria lixo.
-        // Para garantir, vamos não limpar se assumirmos que o Shell roda.
-        // let _ = self.fb.clear(BG_COLOR);
+        // Para simplificar e garantir limpeza no backbuffer:
+        // self.backbuffer.clear(BG_COLOR); // Descomentar se quiser fundo sólido
 
         // 2. Desenhar decorações das janelas (do fundo para o topo)
         for win in &self.windows {
-            // OBS: Passamos apenas a referência para o FB e para a janela,
-            // evitando borrow mutável de 'self' inteiro enquanto iteramos 'self.windows'.
-            Self::draw_window_frame(&mut self.fb, win);
+            Self::draw_window_frame(&mut self.backbuffer, win);
         }
 
         // 3. TODO: Desenhar conteúdo das janelas (buffer do cliente)
 
         // 4. Desenhar cursor por último (topo)
-        cursor::draw(&mut self.fb, self.cursor_x, self.cursor_y);
+        cursor::draw(&mut self.backbuffer, self.cursor_x, self.cursor_y);
+
+        // 5. Enviar para tela (Flush)
+        self.backbuffer.present();
+
+        // Limpar dirty flag
+        self.dirty = false;
     }
 
-    fn draw_window_frame(fb: &mut Framebuffer, win: &WindowInfo) {
+    fn draw_window_frame(fb: &mut Backbuffer, win: &WindowInfo) {
         // Desenhar decoração (barra de título, botões, bordas)
         decoration::draw_window_decoration(
             fb,
@@ -115,16 +133,6 @@ impl Compositor {
             win.title,
             win.is_active,
         );
-
-        // Área interna da janela (conteúdo)
-        // NÃO DESENHAR CONTEÚDO AQUI se o app cliente desenha.
-        // Como o Terminal App desenha no mesmo lugar, remover para evitar flicker.
-        // let content_x = win.x + decoration::BORDER_WIDTH;
-        // let content_y = win.y + decoration::TITLEBAR_HEIGHT;
-        // let content_w = win.width - decoration::BORDER_WIDTH * 2;
-        // let content_h = win.height - decoration::TITLEBAR_HEIGHT - decoration::BORDER_WIDTH;
-        // let content_bg = Color::rgb(20, 20, 30);
-        // let _ = fb.fill_rect(content_x, content_y, content_w, content_h, content_bg);
     }
 }
 
@@ -139,25 +147,25 @@ pub extern "C" fn _start() -> ! {
 
     match Compositor::new() {
         Ok(mut compositor) => {
-            println!("[Firefly] Compositor initialized");
-
-            // Desenhar tela inicial (Decorations)
-            compositor.draw_screen();
+            println!("[Firefly] Compositor initialized (Double Buffered)");
 
             // Loop principal
             loop {
                 // TODO: Processar eventos de input
+                // Se houver input (eg mouse move), atualizar cursor_x/y e setar dirty = true
+                // Por enqunato, forçamos dirty a cada N frames para teste de animação,
+                // ou apenas deixamos estático.
 
-                // Redesenhar tela
+                // Simulação de movimento (apenas para testar dirty check)
+                // compositor.cursor_x = (compositor.cursor_x + 1) % 800;
+                // compositor.dirty = true;
+
+                // Redesenhar tela (se dirty)
                 compositor.draw_screen();
 
-                // Throttle (60 FPS approx)
-                for _ in 0..100000 {
-                    core::hint::spin_loop();
-                }
-
-                // Yield para shell rodar
-                redpowder::process::yield_now();
+                // Throttle (60 FPS)
+                // Usar sleep para dormir e economizar CPU
+                let _ = redpowder::time::sleep(16);
             }
         }
         Err(_) => {
@@ -165,9 +173,9 @@ pub extern "C" fn _start() -> ! {
         }
     }
 
-    println!("[Firefly] Done!");
+    println!("[Firefly] Component Exited!");
     loop {
-        core::hint::spin_loop();
+        let _ = redpowder::time::sleep(1000);
     }
 }
 
