@@ -275,12 +275,31 @@ impl Server {
             shm_id.0
         );
 
+        // Detectar janelas fullscreen e atribuir layer Background
+        // Isso garante que o Shell (desktop background) seja renderizado primeiro
+        let display_size = self.render_engine.size();
+        if req.width == display_size.width
+            && req.height == display_size.height
+            && req.x == 0
+            && req.y == 0
+        {
+            self.render_engine
+                .set_window_layer(window_id, gfx_types::LayerType::Background);
+            crate::println!(
+                "[Server] Janela {} é fullscreen -> layer Background",
+                window_id
+            );
+        }
+
         Ok(())
     }
 
     /// Processa requisição de commit de buffer.
     fn handle_commit_buffer(&mut self, data: &[u8]) -> SysResult<()> {
         let req = unsafe { &*(data.as_ptr() as *const CommitBufferRequest) };
+        // Marcar que a janela tem conteúdo (primeira vez que recebe commit)
+        self.render_engine.mark_window_has_content(req.window_id);
+        // Marcar área como danificada para re-renderização
         self.render_engine.mark_damage(req.window_id);
         Ok(())
     }

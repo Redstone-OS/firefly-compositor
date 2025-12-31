@@ -7,7 +7,7 @@ use crate::scene::{DamageTracker, Layer, LayerManager, Window, WindowId};
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
-use gfx_types::{Color, DisplayInfo, Point, Rect, Size};
+use gfx_types::{Color, DisplayInfo, LayerType, Point, Rect, Size};
 use redpowder::graphics::write_framebuffer;
 use redpowder::ipc::SharedMemory;
 use redpowder::syscall::SysResult;
@@ -125,6 +125,24 @@ impl RenderEngine {
         }
     }
 
+    /// Altera o layer de uma janela.
+    pub fn set_window_layer(&mut self, id: u32, layer: gfx_types::LayerType) {
+        if let Some(window) = self.windows.get_mut(&id) {
+            window.set_layer(layer);
+            crate::println!("[Render] Janela {} -> layer {:?}", id, layer);
+        }
+    }
+
+    /// Marca que a janela recebeu conteúdo (pelo menos um commit).
+    pub fn mark_window_has_content(&mut self, id: u32) {
+        if let Some(window) = self.windows.get_mut(&id) {
+            if !window.has_content {
+                window.set_has_content();
+                crate::println!("[Render] Janela {} recebeu primeiro conteúdo", id);
+            }
+        }
+    }
+
     /// Renderiza um frame completo.
     pub fn render(&mut self) -> SysResult<()> {
         self.frame_count += 1;
@@ -151,10 +169,30 @@ impl RenderEngine {
             BACKGROUND_COLOR,
         );
 
-        // 2. Coletar IDs de TODAS as janelas (bypass layer system for now)
-        let windows_to_render: Vec<u32> = self.windows.keys().copied().collect();
+        // 2. Coletar IDs de janelas com conteúdo e ordenar por layer (Background primeiro)
+        let mut windows_to_render: Vec<u32> = self
+            .windows
+            .iter()
+            .filter(|(_, w)| w.has_content) // Só renderizar janelas que já receberam conteúdo
+            .map(|(id, _)| *id)
+            .collect();
 
-        // 3. Compor janelas
+        // Ordenar por layer type (Background=0 primeiro, Normal=1 depois, etc.)
+        windows_to_render.sort_by(|a, b| {
+            let layer_a = self
+                .windows
+                .get(a)
+                .map(|w| w.layer)
+                .unwrap_or(LayerType::Normal);
+            let layer_b = self
+                .windows
+                .get(b)
+                .map(|w| w.layer)
+                .unwrap_or(LayerType::Normal);
+            layer_a.cmp(&layer_b)
+        });
+
+        // 3. Compor janelas (na ordem: Background -> Normal -> Panel -> Overlay)
         for window_id in windows_to_render {
             self.composite_window_by_id(window_id);
         }
@@ -170,70 +208,16 @@ impl RenderEngine {
 
     /// Compõe uma janela no backbuffer por ID.
     fn composite_window_by_id(&mut self, window_id: u32) {
-        // Extrair dados necessários primeiro
-        let (src_size, position, is_transparent, shm_ptr, shm_size) = {
-            let window = match self.windows.get(&window_id) {
-                Some(w) => w,
-                None => return,
-            };
-            (
-                window.size,
-                window.position,
-                window.flags.has(gfx_types::WindowFlags::TRANSPARENT),
-                window.shm.as_ptr(),
-                window.shm.size(),
-            )
-        };
-
-        // Debug: log window info on first few frames
-        static mut DEBUG_COUNT: u32 = 0;
-        unsafe {
-            if DEBUG_COUNT < 3 {
-                DEBUG_COUNT += 1;
-                crate::println!(
-                    "[Composite] Window {} at ({}, {})",
-                    window_id,
-                    position.x,
-                    position.y
-                );
-                crate::println!("[Composite] Size: {}x{}", src_size.width, src_size.height);
-                crate::println!("[Composite] SHM ptr: {:p}, size: {}", shm_ptr, shm_size);
-
-                // Check first few pixels
-                if shm_size > 0 {
-                    let pixels = shm_ptr as *const u32;
-                    let p0 = core::ptr::read_volatile(pixels);
-                    let p1 = core::ptr::read_volatile(pixels.add(1));
-                    let p2 = core::ptr::read_volatile(pixels.add(2));
-                    crate::println!("[Composite] First 3 pixels: {:#x} {:#x} {:#x}", p0, p1, p2);
-                }
-            }
-        }
-
-        // Obter pixels do window
+        // Extrair dados necessários
         let window = match self.windows.get(&window_id) {
             Some(w) => w,
             None => return,
         };
-        let src_pixels: Vec<u32> = window.pixels().to_vec();
 
-        // Debug: check src_pixels
-        unsafe {
-            static mut PIXELS_DEBUG: bool = false;
-            if !PIXELS_DEBUG {
-                PIXELS_DEBUG = true;
-                crate::println!("[Composite] src_pixels len: {}", src_pixels.len());
-                if src_pixels.len() >= 3 {
-                    crate::println!(
-                        "[Composite] Vec pixels: {:#x} {:#x} {:#x}",
-                        src_pixels[0],
-                        src_pixels[1],
-                        src_pixels[2]
-                    );
-                }
-            }
-        }
-
+        let src_size = window.size;
+        let position = window.position;
+        let is_transparent = window.flags.has(gfx_types::WindowFlags::TRANSPARENT);
+        let src_pixels = window.pixels();
         let dst_size = self.size();
 
         // Fazer blit
@@ -270,7 +254,7 @@ impl RenderEngine {
             Blitter::blit_alpha(
                 &mut self.backbuffer,
                 dst_size,
-                src_pixels,
+                &src_pixels,
                 src_size,
                 Rect::from_size(src_size),
                 dst_point,
@@ -279,7 +263,7 @@ impl RenderEngine {
             Blitter::blit_opaque(
                 &mut self.backbuffer,
                 dst_size,
-                src_pixels,
+                &src_pixels,
                 src_size,
                 Rect::from_size(src_size),
                 dst_point,

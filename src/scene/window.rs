@@ -27,6 +27,9 @@ pub struct Window {
     pub dirty: bool,
     /// Camada da janela.
     pub layer: gfx_types::LayerType,
+    /// Indica se a janela já recebeu conteúdo (pelo menos um commit).
+    /// Janelas sem conteúdo não são renderizadas.
+    pub has_content: bool,
 }
 
 impl Window {
@@ -41,7 +44,18 @@ impl Window {
             visible: true,
             dirty: true,
             layer: gfx_types::LayerType::Normal,
+            has_content: false,
         }
+    }
+
+    /// Altera layer da janela.
+    pub fn set_layer(&mut self, layer: gfx_types::LayerType) {
+        self.layer = layer;
+    }
+
+    /// Marca que a janela recebeu conteúdo.
+    pub fn set_has_content(&mut self) {
+        self.has_content = true;
     }
 
     /// Retorna o retângulo da janela.
@@ -69,9 +83,17 @@ impl Window {
         self.dirty = true;
     }
 
-    /// Retorna ponteiro para os pixels da janela.
-    pub fn pixels(&self) -> &[u32] {
+    /// Retorna pixels da janela (leitura volatile para garantir dados frescos da RAM).
+    pub fn pixels(&self) -> alloc::vec::Vec<u32> {
         let count = (self.size.width * self.size.height) as usize;
-        unsafe { core::slice::from_raw_parts(self.shm.as_ptr() as *const u32, count) }
+        let src_ptr = self.shm.as_ptr() as *const u32;
+        let mut pixels = alloc::vec::Vec::with_capacity(count);
+
+        for i in 0..count {
+            let pixel = unsafe { core::ptr::read_volatile(src_ptr.add(i)) };
+            pixels.push(pixel);
+        }
+
+        pixels
     }
 }
