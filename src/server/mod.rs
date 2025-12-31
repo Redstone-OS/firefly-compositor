@@ -119,15 +119,9 @@ impl Server {
         while self.running {
             loop_count += 1;
 
-            // Log a cada 100 iterações
+            // Log a cada 100 iterações (aprox. 1.6s se fosse 60fps, mas no yield é mais rápido)
             if loop_count % 100 == 0 {
-                let (frames, windows) = self.render_engine.stats();
-                crate::println!(
-                    "[Loop] iter={}, frames={}, windows={}",
-                    loop_count,
-                    frames,
-                    windows
-                );
+                crate::println!("[Compositor] Procurando novas atualizacoes...");
             }
 
             // 1. Processar mensagens IPC (non-blocking)
@@ -151,6 +145,7 @@ impl Server {
     }
 
     /// Processa mensagens IPC pendentes.
+    /// Processa apenas UMA mensagem por chamada para evitar race conditions.
     fn process_messages(&mut self, buf: &mut [u8; MAX_MSG_SIZE]) -> SysResult<()> {
         // Tenta receber mensagem (non-blocking com timeout 0)
         if let Ok(size) = self.port.recv(buf, 0) {
@@ -266,6 +261,7 @@ impl Server {
         };
 
         let _ = reply_port.send(resp_bytes, 0);
+        crate::println!("[Server] Resposta enviada para porta '{}'", port_name);
 
         crate::println!(
             "[Server] Janela {} criada ({}x{}) SHM: {}",
@@ -297,6 +293,10 @@ impl Server {
     /// Processa requisição de commit de buffer.
     fn handle_commit_buffer(&mut self, data: &[u8]) -> SysResult<()> {
         let req = unsafe { &*(data.as_ptr() as *const CommitBufferRequest) };
+        crate::println!(
+            "[Server] COMMIT_BUFFER recebido para janela {}",
+            req.window_id
+        );
         // Marcar que a janela tem conteúdo (primeira vez que recebe commit)
         self.render_engine.mark_window_has_content(req.window_id);
         // Marcar área como danificada para re-renderização

@@ -59,7 +59,7 @@ static ALLOCATOR: redpowder::mem::heap::SyscallAllocator = redpowder::mem::heap:
 #[no_mangle]
 #[link_section = ".text._start"]
 pub extern "C" fn _start() -> ! {
-    println!("[Firefly] Compositor iniciando (v2.1)...");
+    println!("[Firefly] Compositor iniciando v0.0.1");
 
     // Inicializar e executar o servidor
     match server::Server::new() {
