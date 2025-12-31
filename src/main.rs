@@ -33,7 +33,7 @@ extern crate alloc;
 // Módulos internos
 mod input;
 mod render;
-mod scenegraph;
+mod scene;
 mod server;
 mod ui;
 

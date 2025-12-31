@@ -22,12 +22,13 @@
 //! ```
 
 use crate::input::InputManager;
-use crate::scenegraph::Compositor;
-use redpowder::ipc::Port;
+use crate::render::RenderEngine;
+use gfx_types::Size;
+use redpowder::ipc::{Port, SharedMemory};
 use redpowder::syscall::SysResult;
 use redpowder::window::{
-    opcodes, CommitBufferRequest, CreateWindowRequest, ProtocolMessage, WindowCreatedResponse,
-    COMPOSITOR_PORT, MAX_MSG_SIZE,
+    opcodes, CommitBufferRequest, CreateWindowRequest, WindowCreatedResponse, COMPOSITOR_PORT,
+    MAX_MSG_SIZE,
 };
 
 // ============================================================================
@@ -52,8 +53,8 @@ pub struct Server {
     /// Porta IPC para receber requisições
     port: Port,
 
-    /// Compositor de cena
-    compositor: Compositor,
+    /// Motor de renderização
+    render_engine: RenderEngine,
 
     /// Gerenciador de entrada
     input: InputManager,
@@ -72,15 +73,36 @@ impl Server {
     ///
     /// `Ok(Server)` pronto para executar, ou `Err` em caso de falha.
     pub fn new() -> SysResult<Self> {
+        crate::println!("[Server] Inicializando...");
+
         // Criar porta nomeada para receber requisições
         let port = Port::create(COMPOSITOR_PORT, 128)?;
+        crate::println!("[Server] Porta '{}' criada", COMPOSITOR_PORT);
 
-        // Inicializar compositor
-        let compositor = Compositor::new()?;
+        // Obter informações do display
+        let display_info = redpowder::graphics::get_framebuffer_info()?;
+        crate::println!(
+            "[Server] Display: {}x{}",
+            display_info.width,
+            display_info.height
+        );
+
+        // Converter para gfx_types::DisplayInfo
+        let gfx_display_info = gfx_types::DisplayInfo {
+            id: 0,
+            width: display_info.width,
+            height: display_info.height,
+            refresh_rate_mhz: 60000,
+            format: gfx_types::PixelFormat::ARGB8888,
+            stride: display_info.stride * 4,
+        };
+
+        // Inicializar motor de renderização
+        let render_engine = RenderEngine::new(gfx_display_info);
 
         Ok(Self {
             port,
-            compositor,
+            render_engine,
             input: InputManager::new(),
             running: true,
             frame_count: 0,
@@ -92,8 +114,22 @@ impl Server {
     /// Esta função só retorna em caso de erro fatal ou shutdown.
     pub fn run(&mut self) -> SysResult<()> {
         let mut msg_buf = [0u8; MAX_MSG_SIZE];
+        let mut loop_count = 0u64;
 
         while self.running {
+            loop_count += 1;
+
+            // Log a cada 100 iterações
+            if loop_count % 100 == 0 {
+                let (frames, windows) = self.render_engine.stats();
+                crate::println!(
+                    "[Loop] iter={}, frames={}, windows={}",
+                    loop_count,
+                    frames,
+                    windows
+                );
+            }
+
             // 1. Processar mensagens IPC (non-blocking)
             self.process_messages(&mut msg_buf)?;
 
@@ -101,14 +137,14 @@ impl Server {
             // Nota: Erros são silenciosamente ignorados
             let _ = self.input.update();
 
-            // 3. Renderizar frame
-            self.compositor.render()?;
+            // 3. Renderizar frame (SEMPRE - não apenas quando há mudanças)
+            self.render_engine.render()?;
 
             // 4. Atualizar estatísticas
             self.update_stats();
 
-            // 5. Throttle para manter ~60 FPS
-            let _ = redpowder::time::sleep(FRAME_INTERVAL_MS);
+            // 5. Dar tempo para outros processos rodarem
+            let _ = redpowder::process::yield_now();
         }
 
         Ok(())
@@ -151,15 +187,48 @@ impl Server {
         // Decodificar requisição
         let req = unsafe { &*(data.as_ptr() as *const CreateWindowRequest) };
 
-        // Criar superfície no compositor
-        let surface_id = self.compositor.create_surface(req.width, req.height);
-        if surface_id == 0 {
-            crate::println!("[Server] Falha ao criar superfície");
-            return Ok(());
-        }
+        crate::println!(
+            "[Server] CreateWindow: {}x{} em ({}, {})",
+            req.width,
+            req.height,
+            req.x,
+            req.y
+        );
 
-        // Obter handle da memória compartilhada
-        let shm_handle = self.compositor.get_surface_shm(surface_id);
+        // Criar memória compartilhada para o buffer da janela
+        let buffer_size = (req.width * req.height * 4) as usize;
+        let mut shm = match SharedMemory::create(buffer_size) {
+            Ok(s) => s,
+            Err(e) => {
+                crate::println!("[Server] Falha ao criar SHM: {:?}", e);
+                return Ok(());
+            }
+        };
+
+        // Inicializar memória com PRETO (0xFF000000) para ser visível antes do cliente desenhar
+        let pixel_count = (req.width * req.height) as usize;
+        crate::println!(
+            "[Server] Inicializando SHM: ptr={:p}, pixels={}",
+            shm.as_mut_ptr(),
+            pixel_count
+        );
+        let pixels =
+            unsafe { core::slice::from_raw_parts_mut(shm.as_mut_ptr() as *mut u32, pixel_count) };
+        for pixel in pixels.iter_mut() {
+            *pixel = 0xFF000000; // Preto opaco
+        }
+        // Verificar se escrevemos corretamente
+        crate::println!("[Server] Primeiro pixel apos init: {:#x}", pixels[0]);
+
+        let shm_id = shm.id();
+
+        // Criar janela no render engine
+        let size = Size::new(req.width, req.height);
+        let window_id = self.render_engine.create_window(size, shm);
+
+        // Posicionar janela
+        self.render_engine
+            .move_window(window_id, req.x as i32, req.y as i32);
 
         // Extrair nome da porta de resposta
         let name_len = req
@@ -188,9 +257,9 @@ impl Server {
         // Montar resposta
         let response = WindowCreatedResponse {
             op: opcodes::WINDOW_CREATED,
-            window_id: surface_id,
-            shm_handle: shm_handle.0,
-            buffer_size: (req.width * req.height * 4) as u64,
+            window_id,
+            shm_handle: shm_id.0,
+            buffer_size: buffer_size as u64,
         };
 
         // Enviar resposta
@@ -204,11 +273,11 @@ impl Server {
         let _ = reply_port.send(resp_bytes, 0);
 
         crate::println!(
-            "[Server] Janela {} criada ({}x{}) para '{}'",
-            surface_id,
+            "[Server] Janela {} criada ({}x{}) SHM: {}",
+            window_id,
             req.width,
             req.height,
-            port_name
+            shm_id.0
         );
 
         Ok(())
@@ -217,13 +286,13 @@ impl Server {
     /// Processa requisição de commit de buffer.
     fn handle_commit_buffer(&mut self, data: &[u8]) -> SysResult<()> {
         let req = unsafe { &*(data.as_ptr() as *const CommitBufferRequest) };
-        self.compositor.mark_damage(req.window_id);
+        self.render_engine.mark_damage(req.window_id);
         Ok(())
     }
 
     /// Processa requisição de destruição de janela.
     fn handle_destroy_window(&mut self, _data: &[u8]) -> SysResult<()> {
-        // TODO: Implementar destruição de superfície
+        // TODO: Implementar destruição
         crate::println!("[Server] DESTROY_WINDOW não implementado");
         Ok(())
     }
@@ -237,7 +306,8 @@ impl Server {
         }
 
         if self.frame_count % STATS_LOG_INTERVAL == 0 {
-            crate::println!("[Server] {} frames renderizados", self.frame_count);
+            let (frames, windows) = self.render_engine.stats();
+            crate::println!("[Server] {} frames, {} janelas ativas", frames, windows);
         }
     }
 }
