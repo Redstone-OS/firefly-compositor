@@ -137,8 +137,8 @@ impl Server {
             // 4. Atualizar estatísticas
             self.update_stats();
 
-            // 5. Dar tempo para outros processos rodarem
-            let _ = redpowder::process::yield_now();
+            // 5. Estabilizar Framerate
+            let _ = redpowder::time::sleep(FRAME_INTERVAL_MS);
         }
 
         Ok(())

@@ -83,17 +83,14 @@ impl Window {
         self.dirty = true;
     }
 
-    /// Retorna pixels da janela (leitura volatile para garantir dados frescos da RAM).
-    pub fn pixels(&self) -> alloc::vec::Vec<u32> {
+    /// Retorna pixels da janela como slice (acesso direto à SHM).
+    ///
+    /// # Safety
+    /// O caller deve estar ciente de que o conteúdo pode ser alterado pelo cliente
+    /// concorrentemente. No entanto, para composição, um blit sequencial é aceitável.
+    pub fn pixels(&self) -> &[u32] {
         let count = (self.size.width * self.size.height) as usize;
         let src_ptr = self.shm.as_ptr() as *const u32;
-        let mut pixels = alloc::vec::Vec::with_capacity(count);
-
-        for i in 0..count {
-            let pixel = unsafe { core::ptr::read_volatile(src_ptr.add(i)) };
-            pixels.push(pixel);
-        }
-
-        pixels
+        unsafe { core::slice::from_raw_parts(src_ptr, count) }
     }
 }

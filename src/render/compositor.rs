@@ -143,8 +143,13 @@ impl RenderEngine {
         }
     }
 
-    /// Renderiza um frame completo.
+    /// Renderiza um frame completo se houver damage.
     pub fn render(&mut self) -> SysResult<()> {
+        // Se não há nada para redesenhar, economizar CPU
+        if !self.damage.has_damage() && self.frame_count > 0 {
+            return Ok(());
+        }
+
         self.frame_count += 1;
 
         if self.frame_count == 1 {

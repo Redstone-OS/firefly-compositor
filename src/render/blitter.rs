@@ -23,24 +23,8 @@ impl Blitter {
         let src_stride = src_size.width as usize;
         let dst_stride = dst_size.width as usize;
 
-        // Clampar aos limites
         let copy_width = src_rect.width as usize;
         let copy_height = src_rect.height as usize;
-
-        // Debug: primeira chamada apenas
-        static mut BLIT_DEBUG: bool = false;
-        unsafe {
-            if !BLIT_DEBUG {
-                BLIT_DEBUG = true;
-                crate::println!("[Blit] dst_size: {}x{}", dst_size.width, dst_size.height);
-                crate::println!("[Blit] src_size: {}x{}", src_size.width, src_size.height);
-                crate::println!("[Blit] dst_point: ({}, {})", dst_point.x, dst_point.y);
-                crate::println!("[Blit] copy: {}x{}", copy_width, copy_height);
-                crate::println!("[Blit] src.len={}, dst.len={}", src.len(), dst.len());
-            }
-        }
-
-        let mut pixels_copied = 0usize;
 
         for y in 0..copy_height {
             let src_y = src_rect.y as usize + y;
@@ -61,16 +45,6 @@ impl Blitter {
             if actual_width > 0 && dst_start < dst.len() && src_start < src.len() {
                 dst[dst_start..dst_start + actual_width]
                     .copy_from_slice(&src[src_start..src_start + actual_width]);
-                pixels_copied += actual_width;
-            }
-        }
-
-        // Debug quantos pixels foram copiados
-        unsafe {
-            static mut COPY_DEBUG: bool = false;
-            if !COPY_DEBUG {
-                COPY_DEBUG = true;
-                crate::println!("[Blit] Total pixels copiados: {}", pixels_copied);
             }
         }
     }
