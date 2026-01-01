@@ -294,10 +294,10 @@ impl Server {
     /// Processa requisição de commit de buffer.
     fn handle_commit_buffer(&mut self, data: &[u8]) -> SysResult<()> {
         let req = unsafe { &*(data.as_ptr() as *const CommitBufferRequest) };
-        crate::println!(
-            "[Server] COMMIT_BUFFER recebido para janela {}",
-            req.window_id
-        );
+        // crate::println!(
+        //     "[Server] COMMIT_BUFFER recebido para janela {}",
+        //     req.window_id
+        // );
         // Marcar que a janela tem conteúdo (primeira vez que recebe commit)
         self.render_engine.mark_window_has_content(req.window_id);
         // Marcar área como danificada para re-renderização
