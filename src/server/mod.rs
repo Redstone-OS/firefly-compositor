@@ -119,9 +119,10 @@ impl Server {
         while self.running {
             loop_count += 1;
 
-            // Log a cada 100 iterações (aprox. 1.6s se fosse 60fps, mas no yield é mais rápido)
-            if loop_count % 100 == 0 {
-                crate::println!("[Compositor] Procurando novas atualizacoes...");
+            // Log a cada 600 iterações (~10 segundos)
+            if loop_count % 600 == 0 {
+                let (_, win_count) = self.render_engine.stats();
+                crate::println!("[Compositor] Loop ativo, {} janelas", win_count);
             }
 
             // 1. Processar mensagens IPC (non-blocking)
