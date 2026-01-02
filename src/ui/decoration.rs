@@ -19,6 +19,7 @@ const TEXT_COLOR: Color = Color::BLACK;
 
 const BTN_SIZE: u32 = TITLEBAR_HEIGHT - 4;
 const BTN_CLOSE_COLOR: Color = Color::rgb(232, 17, 35);
+const BTN_MIN_COLOR: Color = Color::rgb(200, 200, 200); // Cinza para minimizar
 
 // ============================================================================
 // FUNÇÕES AUXILIARES
@@ -129,6 +130,9 @@ pub fn draw_window_decoration(
     // Botão Fechar (X)
     draw_close_button(buffer, buffer_size, x + w - BTN_SIZE - 2, y + 2);
 
+    // Botão Minimizar (-)
+    draw_minimize_button(buffer, buffer_size, x + w - (BTN_SIZE * 2) - 6, y + 2);
+
     // Título indicador (3 pontos)
     fill_rect(
         buffer,
@@ -191,4 +195,27 @@ fn draw_close_button(buffer: &mut [u32], buffer_size: Size, x: u32, y: u32) {
             Color::WHITE,
         );
     }
+}
+
+fn draw_minimize_button(buffer: &mut [u32], buffer_size: Size, x: u32, y: u32) {
+    fill_rect(
+        buffer,
+        buffer_size,
+        x as i32,
+        y as i32,
+        BTN_SIZE,
+        BTN_SIZE,
+        BTN_MIN_COLOR,
+    );
+
+    // Linha branca horizontal
+    fill_rect(
+        buffer,
+        buffer_size,
+        (x + 4) as i32,
+        (y + BTN_SIZE - 6) as i32,
+        BTN_SIZE - 8,
+        2,
+        Color::BLACK,
+    );
 }

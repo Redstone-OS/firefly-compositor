@@ -2,6 +2,7 @@
 //!
 //! Representa uma janela no compositor.
 
+use alloc::string::String;
 use gfx_types::{BufferHandle, Point, Rect, Size, WindowFlags};
 use redpowder::ipc::SharedMemory;
 
@@ -30,6 +31,12 @@ pub struct Window {
     /// Indica se a janela já recebeu conteúdo (pelo menos um commit).
     /// Janelas sem conteúdo não são renderizadas.
     pub has_content: bool,
+    /// Título da janela.
+    pub title: String,
+    /// Estado maximizado.
+    pub maximized: bool,
+    /// Retângulo anterior para restauração.
+    pub restore_rect: Option<Rect>,
 }
 
 impl Window {
@@ -45,6 +52,9 @@ impl Window {
             dirty: true,
             layer: gfx_types::LayerType::Normal,
             has_content: false,
+            title: String::new(),
+            maximized: false,
+            restore_rect: None,
         }
     }
 

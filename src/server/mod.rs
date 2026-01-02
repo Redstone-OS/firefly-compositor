@@ -5,6 +5,7 @@
 
 use crate::input::InputManager;
 use crate::render::RenderEngine;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use gfx_types::Size;
 use redpowder::event::{event_type, InputEvent};
@@ -61,6 +62,9 @@ pub struct Server {
     dragging_window: Option<u32>,
     drag_off_x: i32,
     drag_off_y: i32,
+    taskbar_port: Option<Port>,
+    last_click_frame: u64,
+    last_click_window: Option<u32>,
 }
 
 impl Server {
@@ -97,11 +101,14 @@ impl Server {
             client_ports: Vec::new(),
             focused_window: None,
             last_mouse_buttons: 0,
-            mouse_x: 100,
-            mouse_y: 100,
+            mouse_x: 0,
+            mouse_y: 0,
             dragging_window: None,
             drag_off_x: 0,
             drag_off_y: 0,
+            taskbar_port: None,
+            last_click_frame: 0,
+            last_click_window: None,
         })
     }
 
@@ -160,10 +167,60 @@ impl Server {
             opcodes::INPUT_UPDATE => self.handle_input_update(data),
             opcodes::MINIMIZE_WINDOW => self.handle_minimize_window(data),
             opcodes::RESTORE_WINDOW => self.handle_restore_window(data),
+            opcodes::REGISTER_TASKBAR => {
+                let msg = unsafe {
+                    &*(data.as_ptr() as *const redpowder::window::RegisterTaskbarRequest)
+                };
+                self.handle_register_taskbar(msg)
+            }
             _ => {
                 redpowder::println!("[Server] Opcode desconhecido: {:#x}", opcode);
                 Ok(())
             }
+        }
+    }
+
+    fn handle_register_taskbar(
+        &mut self,
+        req: &redpowder::window::RegisterTaskbarRequest,
+    ) -> SysResult<()> {
+        let name_str = core::str::from_utf8(&req.listener_port)
+            .unwrap_or("")
+            .trim_matches(char::from(0));
+
+        if !name_str.is_empty() {
+            redpowder::println!("[Server] Taskbar registrada na porta: '{}'", name_str);
+            match Port::connect(name_str) {
+                Ok(p) => self.taskbar_port = Some(p),
+                Err(e) => redpowder::println!("[Server] Falha ao conectar taskbar_port: {:?}", e),
+            }
+        }
+        Ok(())
+    }
+
+    fn send_lifecycle_event(&mut self, event_type: u32, window_id: u32, title: &str) {
+        if let Some(ref mut port) = self.taskbar_port {
+            let mut title_buf = [0u8; 64];
+            let bytes = title.as_bytes();
+            let len = bytes.len().min(64);
+            for i in 0..len {
+                title_buf[i] = bytes[i];
+            }
+
+            let evt = redpowder::window::WindowLifecycleEvent {
+                op: opcodes::EVENT_WINDOW_LIFECYCLE,
+                event_type,
+                window_id,
+                title: title_buf,
+            };
+
+            let evt_bytes = unsafe {
+                core::slice::from_raw_parts(
+                    &evt as *const _ as *const u8,
+                    core::mem::size_of::<redpowder::window::WindowLifecycleEvent>(),
+                )
+            };
+            let _ = port.send(evt_bytes, 0);
         }
     }
 
@@ -220,6 +277,16 @@ impl Server {
                     if self.focused_window != Some(window_id) {
                         self.focused_window = Some(window_id);
 
+                        // Notificar Taskbar sobre foco
+                        if let Some(win) = self.render_engine.get_window(window_id) {
+                            let title = win.title.clone();
+                            self.send_lifecycle_event(
+                                redpowder::window::lifecycle_events::FOCUSED,
+                                window_id,
+                                &title,
+                            );
+                        }
+
                         // Bring to Front apenas para janelas normais (não o Shell)
                         if window_id != 1 {
                             self.render_engine.bring_to_front(window_id);
@@ -229,18 +296,116 @@ impl Server {
                     // Enviar evento de click para a janela
                     self.dispatch_mouse_event(window_id, req.mouse_x, req.mouse_y, buttons, true);
 
-                    // Tentar iniciar arraste se clicar na barra de título (40px)
+                    // Lógica de Decoração (Título, Botões)
+                    let mut click_action = 0; // 0=None, 1=Close, 2=Minimize, 3=Maximize, 4=Drag
+
                     if let Some(win) = self.render_engine.get_window(window_id) {
-                        let win_rect = win.rect();
-                        let title_height = 40;
-                        if req.mouse_y >= win_rect.y && req.mouse_y < win_rect.y + title_height {
-                            // Só arrastar se não for o Shell
-                            if window_id != 1 {
+                        let rect = win.rect();
+                        let rel_x = req.mouse_x - rect.x;
+                        let rel_y = req.mouse_y - rect.y;
+
+                        // Title Bar Height = 24
+                        if rel_y >= 0 && rel_y < 24 && window_id != 1 {
+                            let w = rect.width as i32;
+                            let btn_size = 20; // TITLEBAR_HEIGHT - 4
+                            let close_x = w - btn_size - 2;
+                            let min_x = w - (btn_size * 2) - 6;
+
+                            if rel_x >= close_x && rel_x < close_x + btn_size {
+                                click_action = 1; // Close
+                            } else if rel_x >= min_x && rel_x < min_x + btn_size {
+                                click_action = 2; // Minimize
+                            } else {
+                                // Title bar click
+                                // Check Double Click
+                                let is_double = self.last_click_window == Some(window_id)
+                                    && (self.frame_count > self.last_click_frame)
+                                    && (self.frame_count - self.last_click_frame) < 30;
+
+                                if is_double {
+                                    click_action = 3; // Maximize
+                                } else {
+                                    click_action = 4; // Top Drag
+                                }
+                            }
+                        }
+                    }
+
+                    match click_action {
+                        1 => {
+                            // Close
+                            let req = redpowder::window::DestroyWindowRequest {
+                                op: opcodes::DESTROY_WINDOW,
+                                window_id,
+                            };
+                            let bytes = unsafe {
+                                core::slice::from_raw_parts(
+                                    &req as *const _ as *const u8,
+                                    core::mem::size_of::<redpowder::window::DestroyWindowRequest>(),
+                                )
+                            };
+                            let _ = self.handle_destroy_window(bytes);
+                        }
+                        2 => {
+                            // Minimize
+                            let req = redpowder::window::DestroyWindowRequest {
+                                op: opcodes::MINIMIZE_WINDOW,
+                                window_id, // Reusing struct
+                            };
+                            let bytes = unsafe {
+                                core::slice::from_raw_parts(
+                                    &req as *const _ as *const u8,
+                                    core::mem::size_of::<redpowder::window::DestroyWindowRequest>(),
+                                )
+                            };
+                            let _ = self.handle_minimize_window(bytes);
+                        }
+                        3 => {
+                            // Maximize/Restore Toggle
+                            let mut dirty = false;
+                            if let Some(win) = self.render_engine.get_window_mut(window_id) {
+                                if win.maximized {
+                                    // Restore
+                                    if let Some(r) = win.restore_rect {
+                                        win.move_to(r.x, r.y);
+                                    }
+                                    win.maximized = false;
+                                    redpowder::println!("[Server] Window {} Restored", window_id);
+                                } else {
+                                    // Maximize
+                                    win.restore_rect = Some(win.rect());
+                                    win.move_to(0, 0);
+                                    win.maximized = true;
+                                    redpowder::println!(
+                                        "[Server] Window {} Maximized (Position Only)",
+                                        window_id
+                                    );
+                                }
+                                dirty = true;
+                            }
+                            if dirty {
+                                self.render_engine.full_screen_damage();
+                            }
+                            self.last_click_window = None; // Reset double click
+                        }
+                        4 => {
+                            // Start Drag
+                            if let Some(win) = self.render_engine.get_window(window_id) {
+                                let rect = win.rect();
                                 redpowder::println!("[Server] Drag START window {}", window_id);
                                 self.dragging_window = Some(window_id);
-                                self.drag_off_x = req.mouse_x - win_rect.x;
-                                self.drag_off_y = req.mouse_y - win_rect.y;
+                                self.drag_off_x = req.mouse_x - rect.x;
+                                self.drag_off_y = req.mouse_y - rect.y;
+
+                                self.last_click_window = Some(window_id);
+                                self.last_click_frame = self.frame_count;
                             }
+                        }
+                        _ => {
+                            // Click normal (content) - ja enviado via dispatch_mouse_event
+                            // Reset double click logic if clicked elsewhere?
+                            self.last_click_window = Some(window_id);
+                            self.last_click_frame = self.frame_count;
                         }
                     }
                 }
@@ -390,7 +555,19 @@ impl Server {
             gfx_types::LayerType::Normal // Apps
         };
 
-        let window_id = self.render_engine.create_window(size, shm, layer);
+        // Extrair título
+        let title_len = req
+            .title
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(req.title.len());
+        let title_str = core::str::from_utf8(&req.title[..title_len])
+            .unwrap_or("Untitled")
+            .to_string();
+
+        let window_id = self
+            .render_engine
+            .create_window(size, shm, layer, title_str);
         self.render_engine
             .move_window(window_id, req.x as i32, req.y as i32);
 
@@ -469,6 +646,16 @@ impl Server {
             self.focused_window = None;
         }
 
+        // Notificar taskbar
+        if let Some(win) = self.render_engine.get_window(window_id) {
+            let title_clone = win.title.clone();
+            self.send_lifecycle_event(
+                redpowder::window::lifecycle_events::CREATED,
+                window_id,
+                &title_clone,
+            );
+        }
+
         Ok(())
     }
 
@@ -484,6 +671,13 @@ impl Server {
 
         // 1. Remover da lista de portas
         self.client_ports.retain(|c| c.window_id != window_id);
+
+        // Notificar taskbar
+        self.send_lifecycle_event(
+            redpowder::window::lifecycle_events::DESTROYED,
+            req.window_id,
+            "",
+        );
 
         // 2. Limpar foco se necessário
         if self.focused_window == Some(window_id) {
@@ -511,6 +705,13 @@ impl Server {
         if let Some(win) = self.render_engine.get_window_mut(window_id) {
             win.visible = false;
             redpowder::println!("[Server] Janela {} minimizada", window_id);
+            // Notificar Lifecycle MINIMIZED
+            let title_clone = win.title.clone();
+            self.send_lifecycle_event(
+                redpowder::window::lifecycle_events::MINIMIZED,
+                window_id,
+                &title_clone,
+            );
             self.render_engine.full_screen_damage();
         }
 
@@ -524,6 +725,15 @@ impl Server {
         if let Some(win) = self.render_engine.get_window_mut(window_id) {
             win.visible = true;
             redpowder::println!("[Server] Janela {} restaurada", window_id);
+
+            // Notificar Lifecycle RESTORED
+            let title_clone = win.title.clone();
+            self.send_lifecycle_event(
+                redpowder::window::lifecycle_events::RESTORED,
+                window_id,
+                &title_clone,
+            );
+
             self.render_engine.full_screen_damage();
 
             // Trazer para frente e focar

@@ -5,6 +5,7 @@
 use super::blitter::Blitter;
 use crate::scene::{DamageTracker, Layer, LayerManager, Window, WindowId};
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use gfx_types::{Color, DisplayInfo, LayerType, Point, Rect, Size};
@@ -63,25 +64,34 @@ impl RenderEngine {
         Size::new(self.display_info.width, self.display_info.height)
     }
 
-    /// Cria nova janela em uma camada específica.
-    pub fn create_window(&mut self, size: Size, shm: SharedMemory, layer: LayerType) -> u32 {
+    /// Cria nova janela em uma camada específica, com título.
+    pub fn create_window(
+        &mut self,
+        size: Size,
+        shm: SharedMemory,
+        layer: LayerType,
+        title: String,
+    ) -> u32 {
         let id = self.next_window_id;
         self.next_window_id += 1;
 
         let mut window = Window::new(id, size, shm);
         window.layer = layer;
+        window.title = title;
+
+        crate::println!(
+            "[Render] Janela {} criada ({}x{}) - '{}'",
+            id,
+            size.width,
+            size.height,
+            window.title
+        );
+
         self.windows.insert(id, window);
         self.layers.add_window_to_layer(WindowId(id), layer);
 
         // Marcar área da janela como danificada
         self.damage.add(Rect::new(0, 0, size.width, size.height));
-
-        crate::println!(
-            "[Render] Janela {} criada ({}x{})",
-            id,
-            size.width,
-            size.height
-        );
 
         id
     }
