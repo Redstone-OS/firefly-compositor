@@ -63,15 +63,15 @@ impl RenderEngine {
         Size::new(self.display_info.width, self.display_info.height)
     }
 
-    /// Cria nova janela.
-    pub fn create_window(&mut self, size: Size, shm: SharedMemory) -> u32 {
+    /// Cria nova janela em uma camada específica.
+    pub fn create_window(&mut self, size: Size, shm: SharedMemory, layer: LayerType) -> u32 {
         let id = self.next_window_id;
         self.next_window_id += 1;
 
-        let window = Window::new(id, size, shm);
+        let mut window = Window::new(id, size, shm);
+        window.layer = layer;
         self.windows.insert(id, window);
-        self.layers
-            .add_window_to_layer(WindowId(id), gfx_types::LayerType::Normal);
+        self.layers.add_window_to_layer(WindowId(id), layer);
 
         // Marcar área da janela como danificada
         self.damage.add(Rect::new(0, 0, size.width, size.height));
@@ -109,6 +109,19 @@ impl RenderEngine {
         }
     }
 
+    /// Traz janela para a frente de sua camada.
+    pub fn bring_to_front(&mut self, id: u32) {
+        if let Some(win) = self.windows.get(&id) {
+            let layer_type = win.layer;
+            let window_id = crate::scene::window::WindowId(id);
+            self.layers.get_mut(layer_type).remove_window(window_id);
+            self.layers.get_mut(layer_type).add_window(window_id);
+
+            let size = self.display_info.size();
+            self.damage.damage_full(size.width, size.height);
+        }
+    }
+
     /// Marca janela como modificada.
     pub fn mark_damage(&mut self, id: u32) {
         if let Some(window) = self.windows.get(&id) {
@@ -116,19 +129,26 @@ impl RenderEngine {
         }
     }
 
+    /// Marca a tela inteira como danificada.
+    pub fn full_screen_damage(&mut self) {
+        let size = self.display_info.size();
+        self.damage.damage_full(size.width, size.height);
+    }
+
     /// Retorna ID da janela na posição dada (se houver).
     /// Procura de cima para baixo (janela mais ao topo primeiro).
     pub fn window_at_point(&self, x: i32, y: i32) -> Option<u32> {
-        // Procura em ordem reversa (janelas mais recentes = mais ao topo)
-        for (&id, window) in self.windows.iter().rev() {
-            if window.visible && window.has_content {
-                let rect = window.rect();
-                if x >= rect.x
-                    && x < rect.x + rect.width as i32
-                    && y >= rect.y
-                    && y < rect.y + rect.height as i32
-                {
-                    return Some(id);
+        for window_id in self.layers.iter_top_to_bottom() {
+            if let Some(window) = self.windows.get(&window_id.0) {
+                if window.visible && window.has_content {
+                    let rect = window.rect();
+                    if x >= rect.x
+                        && x < rect.x + rect.width as i32
+                        && y >= rect.y
+                        && y < rect.y + rect.height as i32
+                    {
+                        return Some(window_id.0);
+                    }
                 }
             }
         }

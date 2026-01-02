@@ -214,39 +214,33 @@ impl Server {
                 if let Some(window_id) =
                     self.render_engine.window_at_point(req.mouse_x, req.mouse_y)
                 {
+                    // Mover foco (apenas se for diferente)
                     if self.focused_window != Some(window_id) {
-                        redpowder::println!(
-                            "[Server] Click detected! Focus changed to window {}",
-                            window_id
-                        );
                         self.focused_window = Some(window_id);
-                    }
 
-                    // Tentar iniciar arraste se clicar na barra de título (topo da janela)
-                    // Janelas normais tem ~30-40px de barra de título
-                    if let Some(win) = self.render_engine.get_window(window_id) {
-                        let win_rect = win.rect();
-                        let title_height = 40;
-                        if req.mouse_y >= win_rect.y && req.mouse_y < win_rect.y + title_height {
-                            redpowder::println!("[Server] Drag START window {}", window_id);
-                            // Só arrastar se não for a Window 1 (geralmente o Desktop/Wallpaper)
-                            if window_id != 1 {
-                                self.dragging_window = Some(window_id);
-                                self.drag_off_x = req.mouse_x - win_rect.x;
-                                self.drag_off_y = req.mouse_y - win_rect.y;
-                            }
-                        } else {
-                            redpowder::println!(
-                                "[Server] Click in window {} but NOT in title bar (y={}, win_y={})",
-                                window_id,
-                                req.mouse_y,
-                                win_rect.y
-                            );
+                        // Bring to Front apenas para janelas normais (não o Shell)
+                        if window_id != 1 {
+                            self.render_engine.bring_to_front(window_id);
                         }
                     }
 
                     // Enviar evento de click para a janela
                     self.dispatch_mouse_event(window_id, req.mouse_x, req.mouse_y, buttons, true);
+
+                    // Tentar iniciar arraste se clicar na barra de título (40px)
+                    if let Some(win) = self.render_engine.get_window(window_id) {
+                        let win_rect = win.rect();
+                        let title_height = 40;
+                        if req.mouse_y >= win_rect.y && req.mouse_y < win_rect.y + title_height {
+                            // Só arrastar se não for o Shell
+                            if window_id != 1 {
+                                redpowder::println!("[Server] Drag START window {}", window_id);
+                                self.dragging_window = Some(window_id);
+                                self.drag_off_x = req.mouse_x - win_rect.x;
+                                self.drag_off_y = req.mouse_y - win_rect.y;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -256,6 +250,8 @@ impl Server {
                     let new_x = req.mouse_x - self.drag_off_x;
                     let new_y = req.mouse_y - self.drag_off_y;
                     self.render_engine.move_window(win_id, new_x, new_y);
+                    // Forçar refresh total para não deixar rastros
+                    self.render_engine.full_screen_damage();
                 } else {
                     self.dragging_window = None;
                 }
@@ -319,6 +315,25 @@ impl Server {
         buttons: u32,
         pressed: bool,
     ) {
+        // Encontrar a janela para saber a posição
+        let (rel_x, rel_y) = if let Some(win) = self.render_engine.get_window(window_id) {
+            (x - win.position.x, y - win.position.y)
+        } else {
+            (x, y)
+        };
+
+        if window_id != 1 {
+            // Não logar Shell para não floodar
+            redpowder::println!(
+                "[Server] Dispatch Mouse to win {}: global({}, {}) -> rel({}, {})",
+                window_id,
+                x,
+                y,
+                rel_x,
+                rel_y
+            );
+        }
+
         let event = InputEvent {
             op: opcodes::EVENT_INPUT,
             event_type: if pressed {
@@ -326,8 +341,8 @@ impl Server {
             } else {
                 event_type::MOUSE_UP
             },
-            param1: x as u32,
-            param2: ((y as u32) << 16) | (buttons & 0xFFFF),
+            param1: (rel_x as i16 as u16 as u32),
+            param2: ((rel_y as i16 as u16 as u32) << 16) | (buttons & 0xFFFF),
         };
 
         let bytes = unsafe {
@@ -363,7 +378,17 @@ impl Server {
 
         let shm_id = shm.id();
         let size = gfx_types::Size::new(req.width, req.height);
-        let window_id = self.render_engine.create_window(size, shm);
+
+        // Determinar camada baseada em flags
+        let layer = if (req.flags & 0x08) != 0 {
+            gfx_types::LayerType::Background // Shell/Wallpaper
+        } else if (req.flags & 0x01) != 0 {
+            gfx_types::LayerType::Panel // Taskbar
+        } else {
+            gfx_types::LayerType::Normal // Apps
+        };
+
+        let window_id = self.render_engine.create_window(size, shm, layer);
         self.render_engine
             .move_window(window_id, req.x as i32, req.y as i32);
 
@@ -445,14 +470,35 @@ impl Server {
         Ok(())
     }
 
+    fn handle_destroy_window(&mut self, data: &[u8]) -> SysResult<()> {
+        if data.len() < core::mem::size_of::<redpowder::window::DestroyWindowRequest>() {
+            return Ok(());
+        }
+
+        let req = unsafe { *(data.as_ptr() as *const redpowder::window::DestroyWindowRequest) };
+        let window_id = req.window_id;
+
+        redpowder::println!("[Server] Destruindo janela {}", window_id);
+
+        // 1. Remover da lista de portas
+        self.client_ports.retain(|c| c.window_id != window_id);
+
+        // 2. Limpar foco se necessário
+        if self.focused_window == Some(window_id) {
+            self.focused_window = None;
+        }
+
+        // 3. Remover da engine de renderização e marcar dano total
+        self.render_engine.destroy_window(window_id);
+        self.render_engine.full_screen_damage();
+
+        Ok(())
+    }
+
     fn handle_commit_buffer(&mut self, data: &[u8]) -> SysResult<()> {
         let req = unsafe { &*(data.as_ptr() as *const CommitBufferRequest) };
         self.render_engine.mark_window_has_content(req.window_id);
         self.render_engine.mark_damage(req.window_id);
-        Ok(())
-    }
-
-    fn handle_destroy_window(&mut self, _data: &[u8]) -> SysResult<()> {
         Ok(())
     }
 }

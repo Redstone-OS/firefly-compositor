@@ -84,6 +84,17 @@ impl LayerManager {
     pub fn iter_bottom_to_top(&self) -> impl Iterator<Item = &Layer> {
         self.layers.iter().filter(|l| l.visible)
     }
+
+    /// Itera sobre todas as janelas do topo para o fundo.
+    pub fn iter_top_to_bottom(&self) -> impl Iterator<Item = WindowId> + '_ {
+        // Overlay (3) -> Panel (2) -> Normal (1) -> Background (0)
+        // Skip Cursor (4) pois geralmente não é clicável
+        self.layers[0..=3]
+            .iter()
+            .rev() // Overlay primeiro
+            .flat_map(|l| l.windows.iter().rev()) // Janela do topo da camada primeiro
+            .copied()
+    }
 }
 
 impl Default for LayerManager {
