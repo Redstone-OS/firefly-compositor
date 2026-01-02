@@ -58,6 +58,9 @@ pub struct Server {
     last_mouse_buttons: u32,
     mouse_x: i32,
     mouse_y: i32,
+    dragging_window: Option<u32>,
+    drag_off_x: i32,
+    drag_off_y: i32,
 }
 
 impl Server {
@@ -96,6 +99,9 @@ impl Server {
             last_mouse_buttons: 0,
             mouse_x: 100,
             mouse_y: 100,
+            dragging_window: None,
+            drag_off_x: 0,
+            drag_off_y: 0,
         })
     }
 
@@ -216,8 +222,33 @@ impl Server {
                         self.focused_window = Some(window_id);
                     }
 
+                    // Tentar iniciar arraste se clicar na barra de título (topo da janela)
+                    // Janelas normais tem 30px de barra de título
+                    if let Some(win) = self.render_engine.get_window(window_id) {
+                        let win_rect = win.rect();
+                        if req.mouse_y >= win_rect.y && req.mouse_y < win_rect.y + 30 {
+                            // Só arrastar se não for a Window 1 (geralmente o Desktop/Wallpaper)
+                            if window_id != 1 {
+                                self.dragging_window = Some(window_id);
+                                self.drag_off_x = req.mouse_x - win_rect.x;
+                                self.drag_off_y = req.mouse_y - win_rect.y;
+                            }
+                        }
+                    }
+
                     // Enviar evento de click para a janela
                     self.dispatch_mouse_event(window_id, req.mouse_x, req.mouse_y, buttons, true);
+                }
+            }
+
+            // 3.1. Processar Arraste (se já estiver arrastando)
+            if let Some(win_id) = self.dragging_window {
+                if left_button_now {
+                    let new_x = req.mouse_x - self.drag_off_x;
+                    let new_y = req.mouse_y - self.drag_off_y;
+                    self.render_engine.move_window(win_id, new_x, new_y);
+                } else {
+                    self.dragging_window = None;
                 }
             }
 
@@ -226,6 +257,7 @@ impl Server {
                 if let Some(focused) = self.focused_window {
                     self.dispatch_mouse_event(focused, req.mouse_x, req.mouse_y, buttons, false);
                 }
+                self.dragging_window = None;
             }
 
             self.last_mouse_buttons = buttons;
