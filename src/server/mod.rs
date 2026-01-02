@@ -11,8 +11,8 @@ use redpowder::event::{event_type, InputEvent};
 use redpowder::ipc::{Port, SharedMemory};
 use redpowder::syscall::SysResult;
 use redpowder::window::{
-    opcodes, CommitBufferRequest, CreateWindowRequest, WindowCreatedResponse, COMPOSITOR_PORT,
-    MAX_MSG_SIZE,
+    opcodes, CommitBufferRequest, CreateWindowRequest, DestroyWindowRequest, WindowCreatedResponse,
+    WindowOpRequest, COMPOSITOR_PORT, MAX_MSG_SIZE,
 };
 
 // ============================================================================
@@ -158,6 +158,8 @@ impl Server {
             opcodes::COMMIT_BUFFER => self.handle_commit_buffer(data),
             opcodes::DESTROY_WINDOW => self.handle_destroy_window(data),
             opcodes::INPUT_UPDATE => self.handle_input_update(data),
+            opcodes::MINIMIZE_WINDOW => self.handle_minimize_window(data),
+            opcodes::RESTORE_WINDOW => self.handle_restore_window(data),
             _ => {
                 redpowder::println!("[Server] Opcode desconhecido: {:#x}", opcode);
                 Ok(())
@@ -499,6 +501,36 @@ impl Server {
         let req = unsafe { &*(data.as_ptr() as *const CommitBufferRequest) };
         self.render_engine.mark_window_has_content(req.window_id);
         self.render_engine.mark_damage(req.window_id);
+        Ok(())
+    }
+
+    fn handle_minimize_window(&mut self, data: &[u8]) -> SysResult<()> {
+        let req = unsafe { &*(data.as_ptr() as *const WindowOpRequest) };
+        let window_id = req.window_id;
+
+        if let Some(win) = self.render_engine.get_window_mut(window_id) {
+            win.visible = false;
+            redpowder::println!("[Server] Janela {} minimizada", window_id);
+            self.render_engine.full_screen_damage();
+        }
+
+        Ok(())
+    }
+
+    fn handle_restore_window(&mut self, data: &[u8]) -> SysResult<()> {
+        let req = unsafe { &*(data.as_ptr() as *const WindowOpRequest) };
+        let window_id = req.window_id;
+
+        if let Some(win) = self.render_engine.get_window_mut(window_id) {
+            win.visible = true;
+            redpowder::println!("[Server] Janela {} restaurada", window_id);
+            self.render_engine.full_screen_damage();
+
+            // Trazer para frente e focar
+            self.render_engine.bring_to_front(window_id);
+            self.focused_window = Some(window_id);
+        }
+
         Ok(())
     }
 }
