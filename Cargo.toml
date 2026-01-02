@@ -12,7 +12,7 @@ bench = false
 
 [dependencies]
 redpowder = { path = "../../redpowder" }
-gfx_types = { path = "../../libs/gfx_types" }
+gfx_types = { path = "../../lib/gfx_types" }
 
 [profile.release]
 panic = "abort"
