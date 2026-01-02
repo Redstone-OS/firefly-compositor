@@ -223,16 +223,25 @@ impl Server {
                     }
 
                     // Tentar iniciar arraste se clicar na barra de título (topo da janela)
-                    // Janelas normais tem 30px de barra de título
+                    // Janelas normais tem ~30-40px de barra de título
                     if let Some(win) = self.render_engine.get_window(window_id) {
                         let win_rect = win.rect();
-                        if req.mouse_y >= win_rect.y && req.mouse_y < win_rect.y + 30 {
+                        let title_height = 40;
+                        if req.mouse_y >= win_rect.y && req.mouse_y < win_rect.y + title_height {
+                            redpowder::println!("[Server] Drag START window {}", window_id);
                             // Só arrastar se não for a Window 1 (geralmente o Desktop/Wallpaper)
                             if window_id != 1 {
                                 self.dragging_window = Some(window_id);
                                 self.drag_off_x = req.mouse_x - win_rect.x;
                                 self.drag_off_y = req.mouse_y - win_rect.y;
                             }
+                        } else {
+                            redpowder::println!(
+                                "[Server] Click in window {} but NOT in title bar (y={}, win_y={})",
+                                window_id,
+                                req.mouse_y,
+                                win_rect.y
+                            );
                         }
                     }
 
