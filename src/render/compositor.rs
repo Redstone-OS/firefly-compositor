@@ -40,7 +40,7 @@ impl RenderEngine {
         let size = (display_info.width * display_info.height) as usize;
         let backbuffer = vec![BACKGROUND_COLOR.as_u32(); size];
 
-        crate::println!(
+        redpowder::println!(
             "[Render] Backbuffer criado: {}x{} ({} bytes)",
             display_info.width,
             display_info.height,
@@ -114,6 +114,25 @@ impl RenderEngine {
         if let Some(window) = self.windows.get(&id) {
             self.damage.add(window.rect());
         }
+    }
+
+    /// Retorna ID da janela na posição dada (se houver).
+    /// Procura de cima para baixo (janela mais ao topo primeiro).
+    pub fn window_at_point(&self, x: i32, y: i32) -> Option<u32> {
+        // Procura em ordem reversa (janelas mais recentes = mais ao topo)
+        for (&id, window) in self.windows.iter().rev() {
+            if window.visible && window.has_content {
+                let rect = window.rect();
+                if x >= rect.x
+                    && x < rect.x + rect.width as i32
+                    && y >= rect.y
+                    && y < rect.y + rect.height as i32
+                {
+                    return Some(id);
+                }
+            }
+        }
+        None
     }
 
     /// Destrói janela.
@@ -206,6 +225,67 @@ impl RenderEngine {
         self.present()?;
 
         // 5. Limpar damage para próximo frame
+        self.damage.clear();
+
+        Ok(())
+    }
+
+    /// Renderiza um frame com cursor na posição especificada.
+    pub fn render_with_cursor(&mut self, mouse_x: i32, mouse_y: i32) -> SysResult<()> {
+        self.frame_count += 1;
+
+        // Log periódico (a cada ~100 frames)
+        if self.frame_count % 500 == 0 {
+            crate::println!(
+                "[Render] Frame {}, {} janelas",
+                self.frame_count,
+                self.windows.len()
+            );
+        }
+
+        // 1. Limpar backbuffer com cor de fundo
+        let size = self.size();
+        Blitter::fill_rect(
+            &mut self.backbuffer,
+            size,
+            Rect::from_size(size),
+            BACKGROUND_COLOR,
+        );
+
+        // 2. Coletar IDs de janelas com conteúdo e ordenar por layer (Background primeiro)
+        let mut windows_to_render: Vec<u32> = self
+            .windows
+            .iter()
+            .filter(|(_, w)| w.has_content)
+            .map(|(id, _)| *id)
+            .collect();
+
+        windows_to_render.sort_by(|a, b| {
+            let layer_a = self
+                .windows
+                .get(a)
+                .map(|w| w.layer)
+                .unwrap_or(LayerType::Normal);
+            let layer_b = self
+                .windows
+                .get(b)
+                .map(|w| w.layer)
+                .unwrap_or(LayerType::Normal);
+            layer_a.cmp(&layer_b)
+        });
+
+        // 3. Compor janelas
+        for window_id in windows_to_render {
+            self.composite_window_by_id(window_id);
+        }
+
+        // 4. Desenhar cursor do mouse (por cima de tudo)
+        crate::ui::cursor::draw(&mut self.backbuffer, size, mouse_x, mouse_y);
+
+        // 5. Apresentar no display
+        self.present()?;
+
+        // 6. Limpar damage para próximo frame
         self.damage.clear();
 
         Ok(())
