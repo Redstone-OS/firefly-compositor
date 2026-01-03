@@ -4,8 +4,8 @@
 //!
 //! ## Componentes
 //!
-//! - **Window**: Janela de aplicação
-//! - **Layer**: Camadas de composição (background, normal, overlay)
+//! - **Window**: Janela de aplicação com estado completo
+//! - **Layer**: Camadas de composição (background, normal, panel, overlay)
 //! - **Damage**: Rastreamento de áreas modificadas
 
 pub mod damage;

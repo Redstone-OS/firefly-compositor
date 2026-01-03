@@ -1,25 +1,53 @@
-//! # Damage Tracker
+//! # Scene - Damage Tracker
 //!
-//! Rastreia regiões modificadas para evitar recomposição completa.
+//! Sistema de rastreamento de áreas danificadas para otimização de renderização.
 
 use alloc::vec::Vec;
-use gfx_types::Rect;
+use gfx_types::geometry::Rect;
 
-/// Rastreador de damage (áreas modificadas).
+// =============================================================================
+// DAMAGE TRACKER
+// =============================================================================
+
+/// Rastreador de áreas danificadas.
+///
+/// Mantém uma lista de retângulos que precisam ser redesenhados,
+/// otimizando a renderização ao evitar redesenhar a tela inteira.
 pub struct DamageTracker {
-    /// Regiões danificadas no frame atual.
-    current: Vec<Rect>,
-    /// Limite de rects antes de agrupar tudo.
-    max_rects: usize,
+    /// Regiões danificadas.
+    regions: Vec<Rect>,
+    /// Máximo de regiões antes de colapsar.
+    max_regions: usize,
+    /// Flag de dano total (tela inteira).
+    full_damage: bool,
+    /// Bounds da tela.
+    screen_rect: Rect,
 }
 
 impl DamageTracker {
     /// Cria novo tracker.
     pub fn new() -> Self {
         Self {
-            current: Vec::with_capacity(16),
-            max_rects: 16,
+            regions: Vec::with_capacity(16),
+            max_regions: 16,
+            full_damage: true, // Primeiro frame sempre é full
+            screen_rect: Rect::ZERO,
         }
+    }
+
+    /// Cria tracker com tamanho de tela.
+    pub fn with_size(width: u32, height: u32) -> Self {
+        Self {
+            regions: Vec::with_capacity(16),
+            max_regions: 16,
+            full_damage: true,
+            screen_rect: Rect::new(0, 0, width, height),
+        }
+    }
+
+    /// Define tamanho da tela.
+    pub fn set_size(&mut self, width: u32, height: u32) {
+        self.screen_rect = Rect::new(0, 0, width, height);
     }
 
     /// Adiciona região danificada.
@@ -28,62 +56,95 @@ impl DamageTracker {
             return;
         }
 
-        // Tentar merge com rect existente se houver overlap
-        for existing in &mut self.current {
-            if existing.intersects(&rect) {
-                *existing = existing.union(&rect);
+        // Clip à tela
+        let clipped = match rect.intersection(&self.screen_rect) {
+            Some(r) => r,
+            None => return,
+        };
+
+        // Tentar merge com região existente
+        for existing in &mut self.regions {
+            if existing.intersects(&clipped) {
+                *existing = existing.union(&clipped);
                 return;
             }
         }
 
-        // Adicionar novo rect
-        self.current.push(rect);
+        self.regions.push(clipped);
 
-        // Se exceder limite, agrupar tudo em um bounding box
-        if self.current.len() > self.max_rects {
+        // Colapsar se muitas regiões
+        if self.regions.len() > self.max_regions {
             self.collapse();
         }
     }
 
-    /// Agrupa todos os rects em um bounding box.
+    /// Marca a tela inteira como danificada.
+    pub fn damage_full(&mut self, width: u32, height: u32) {
+        self.screen_rect = Rect::new(0, 0, width, height);
+        self.full_damage = true;
+        self.regions.clear();
+    }
+
+    /// Retorna se há alguma região danificada.
+    #[inline]
+    pub fn has_damage(&self) -> bool {
+        self.full_damage || !self.regions.is_empty()
+    }
+
+    /// Retorna se é dano total.
+    #[inline]
+    pub fn is_full_damage(&self) -> bool {
+        self.full_damage
+    }
+
+    /// Retorna as regiões danificadas.
+    pub fn regions(&self) -> &[Rect] {
+        &self.regions
+    }
+
+    /// Retorna o bounding box de todo o dano.
+    pub fn bounding_box(&self) -> Rect {
+        if self.full_damage {
+            return self.screen_rect;
+        }
+
+        if self.regions.is_empty() {
+            return Rect::ZERO;
+        }
+
+        let mut bounds = self.regions[0];
+        for rect in &self.regions[1..] {
+            bounds = bounds.union(rect);
+        }
+        bounds
+    }
+
+    /// Limpa todas as regiões.
+    pub fn clear(&mut self) {
+        self.regions.clear();
+        self.full_damage = false;
+    }
+
+    /// Colapsa todas as regiões em uma só.
     fn collapse(&mut self) {
-        if self.current.len() <= 1 {
+        if self.regions.len() <= 1 {
             return;
         }
 
-        let mut bounds = self.current[0];
-        for rect in &self.current[1..] {
-            bounds = bounds.union(rect);
-        }
-
-        self.current.clear();
-        self.current.push(bounds);
+        let bounds = self.bounding_box();
+        self.regions.clear();
+        self.regions.push(bounds);
     }
 
-    /// Retorna regiões danificadas.
-    pub fn get_damage(&self) -> &[Rect] {
-        &self.current
-    }
-
-    /// Verifica se há damage.
-    pub fn has_damage(&self) -> bool {
-        !self.current.is_empty()
-    }
-
-    /// Limpa damage para próximo frame.
-    pub fn clear(&mut self) {
-        self.current.clear();
-    }
-
-    /// Retorna e limpa damage (take).
+    /// Retorna e limpa as regiões.
     pub fn take(&mut self) -> Vec<Rect> {
-        core::mem::take(&mut self.current)
-    }
-
-    /// Marca tela inteira como danificada.
-    pub fn damage_full(&mut self, width: u32, height: u32) {
-        self.current.clear();
-        self.current.push(Rect::new(0, 0, width, height));
+        let mut result = core::mem::take(&mut self.regions);
+        if self.full_damage {
+            result.clear();
+            result.push(self.screen_rect);
+        }
+        self.full_damage = false;
+        result
     }
 }
 

@@ -11,7 +11,7 @@ test = false
 bench = false
 
 [dependencies]
-redpowder = { path = "../../redpowder" }
+redpowder = { path = "../../sdk/redpowder" }
 gfx_types = { path = "../../lib/gfx_types" }
 
 [profile.release]

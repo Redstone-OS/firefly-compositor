@@ -1,21 +1,47 @@
 //! # Render Engine
 //!
-//! Motor de composição principal.
+//! Motor de composição principal do Firefly.
+//!
+//! ## Responsabilidades
+//!
+//! - Gerenciar o backbuffer
+//! - Compor janelas de todas as camadas
+//! - Desenhar cursor e efeitos
+//! - Apresentar frames no display
 
 use super::blitter::Blitter;
-use crate::scene::{DamageTracker, Layer, LayerManager, Window, WindowId};
+use crate::scene::{DamageTracker, LayerManager, Window, WindowId};
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
-use gfx_types::{Color, DisplayInfo, LayerType, Point, Rect, Size};
-use redpowder::graphics::write_framebuffer;
+use gfx_types::color::Color;
+use gfx_types::display::DisplayInfo;
+use gfx_types::geometry::{Point, Rect, Size};
+use gfx_types::window::LayerType;
+use redpowder::graphics::write_pixels;
 use redpowder::ipc::SharedMemory;
 use redpowder::syscall::SysResult;
 
-/// Cor de fundo padrão.
-/// Cor de fundo padrão (quando não há wallpaper)
-const BACKGROUND_COLOR: Color = Color(0xFF2d2d2d);
+// =============================================================================
+// CONSTANTES
+// =============================================================================
+
+/// Cor de fundo padrão (quando não há wallpaper).
+const BACKGROUND_COLOR: Color = Color::REDSTONE_SECONDARY;
+
+/// Cor da sombra das janelas.
+const SHADOW_COLOR: Color = Color(0x40000000);
+
+/// Offset da sombra.
+const SHADOW_OFFSET: Point = Point { x: 4, y: 4 };
+
+/// Blur radius da sombra.
+const SHADOW_BLUR: u32 = 8;
+
+// =============================================================================
+// RENDER ENGINE
+// =============================================================================
 
 /// Motor de renderização.
 pub struct RenderEngine {
@@ -33,6 +59,12 @@ pub struct RenderEngine {
     next_window_id: u32,
     /// Contador de frames.
     frame_count: u64,
+    /// Janela com foco.
+    focused_window: Option<u32>,
+    /// Posição do cursor.
+    cursor_pos: Point,
+    /// Cursor visível.
+    cursor_visible: bool,
 }
 
 impl RenderEngine {
@@ -42,29 +74,61 @@ impl RenderEngine {
         let backbuffer = vec![BACKGROUND_COLOR.as_u32(); size];
 
         redpowder::println!(
-            "[Render] Backbuffer criado: {}x{} ({} bytes)",
+            "[Render] Backbuffer criado: {}x{} ({} KB)",
             display_info.width,
             display_info.height,
-            size * 4
+            size * 4 / 1024
         );
+
+        let mut damage = DamageTracker::new();
+        damage.set_size(display_info.width, display_info.height);
 
         Self {
             display_info,
             backbuffer,
             layers: LayerManager::new(),
             windows: BTreeMap::new(),
-            damage: DamageTracker::new(),
+            damage,
             next_window_id: 1,
             frame_count: 0,
+            focused_window: None,
+            cursor_pos: Point::ZERO,
+            cursor_visible: true,
         }
     }
 
+    // =========================================================================
+    // PROPRIEDADES
+    // =========================================================================
+
     /// Retorna tamanho do display.
+    #[inline]
     pub fn size(&self) -> Size {
         Size::new(self.display_info.width, self.display_info.height)
     }
 
-    /// Cria nova janela em uma camada específica, com título.
+    /// Retorna informações do display.
+    #[inline]
+    pub fn display_info(&self) -> &DisplayInfo {
+        &self.display_info
+    }
+
+    /// Retorna número de frames renderizados.
+    #[inline]
+    pub fn frame_count(&self) -> u64 {
+        self.frame_count
+    }
+
+    /// Retorna estatísticas.
+    pub fn stats(&self) -> (u64, usize) {
+        (self.frame_count, self.windows.len())
+    }
+
+    // =========================================================================
+    // JANELAS
+    // =========================================================================
+
+    /// Cria nova janela.
     pub fn create_window(
         &mut self,
         size: Size,
@@ -77,92 +141,34 @@ impl RenderEngine {
 
         let mut window = Window::new(id, size, shm);
         window.layer = layer;
-        window.title = title;
+        window.title = title.clone();
 
-        crate::println!(
-            "[Render] Janela {} criada ({}x{}) - '{}'",
+        redpowder::println!(
+            "[Render] Janela {} criada ({}x{}) layer={:?} '{}'",
             id,
             size.width,
             size.height,
-            window.title
+            layer,
+            title
         );
 
         self.windows.insert(id, window);
         self.layers.add_window_to_layer(WindowId(id), layer);
-
-        // Marcar área da janela como danificada
-        self.damage.add(Rect::new(0, 0, size.width, size.height));
+        self.damage.add(Rect::from_size(size));
 
         id
     }
 
     /// Obtém janela por ID.
+    #[inline]
     pub fn get_window(&self, id: u32) -> Option<&Window> {
         self.windows.get(&id)
     }
 
     /// Obtém janela mutável por ID.
+    #[inline]
     pub fn get_window_mut(&mut self, id: u32) -> Option<&mut Window> {
         self.windows.get_mut(&id)
-    }
-
-    /// Move janela para nova posição.
-    pub fn move_window(&mut self, id: u32, x: i32, y: i32) {
-        if let Some(window) = self.windows.get_mut(&id) {
-            // Marcar posição antiga como danificada
-            self.damage.add(window.rect());
-
-            window.move_to(x, y);
-
-            // Marcar nova posição como danificada
-            self.damage.add(window.rect());
-        }
-    }
-
-    /// Traz janela para a frente de sua camada.
-    pub fn bring_to_front(&mut self, id: u32) {
-        if let Some(win) = self.windows.get(&id) {
-            let layer_type = win.layer;
-            let window_id = crate::scene::window::WindowId(id);
-            self.layers.get_mut(layer_type).remove_window(window_id);
-            self.layers.get_mut(layer_type).add_window(window_id);
-
-            let size = self.display_info.size();
-            self.damage.damage_full(size.width, size.height);
-        }
-    }
-
-    /// Marca janela como modificada.
-    pub fn mark_damage(&mut self, id: u32) {
-        if let Some(window) = self.windows.get(&id) {
-            self.damage.add(window.rect());
-        }
-    }
-
-    /// Marca a tela inteira como danificada.
-    pub fn full_screen_damage(&mut self) {
-        let size = self.display_info.size();
-        self.damage.damage_full(size.width, size.height);
-    }
-
-    /// Retorna ID da janela na posição dada (se houver).
-    /// Procura de cima para baixo (janela mais ao topo primeiro).
-    pub fn window_at_point(&self, x: i32, y: i32) -> Option<u32> {
-        for window_id in self.layers.iter_top_to_bottom() {
-            if let Some(window) = self.windows.get(&window_id.0) {
-                if window.visible && window.has_content {
-                    let rect = window.rect();
-                    if x >= rect.x
-                        && x < rect.x + rect.width as i32
-                        && y >= rect.y
-                        && y < rect.y + rect.height as i32
-                    {
-                        return Some(window_id.0);
-                    }
-                }
-            }
-        }
-        None
     }
 
     /// Destrói janela.
@@ -170,110 +176,158 @@ impl RenderEngine {
         if let Some(window) = self.windows.remove(&id) {
             self.damage.add(window.rect());
             self.layers.remove_window(WindowId(id));
-            crate::println!("[Render] Janela {} destruída", id);
+
+            if self.focused_window == Some(id) {
+                self.focused_window = None;
+            }
+
+            redpowder::println!("[Render] Janela {} destruída", id);
         }
     }
 
-    /// Altera o layer de uma janela.
-    pub fn set_window_layer(&mut self, id: u32, layer: gfx_types::LayerType) {
+    /// Move janela para nova posição.
+    pub fn move_window(&mut self, id: u32, x: i32, y: i32) {
         if let Some(window) = self.windows.get_mut(&id) {
-            window.set_layer(layer);
-            crate::println!("[Render] Janela {} -> layer {:?}", id, layer);
+            self.damage.add(window.rect());
+            window.move_to(x, y);
+            self.damage.add(window.rect());
         }
     }
 
-    /// Marca que a janela recebeu conteúdo (pelo menos um commit).
-    pub fn mark_window_has_content(&mut self, id: u32) {
+    /// Traz janela para a frente.
+    pub fn bring_to_front(&mut self, id: u32) {
+        if let Some(window) = self.windows.get(&id) {
+            let layer = window.layer;
+            self.layers.get_mut(layer).bring_to_front(WindowId(id));
+            self.damage.add(window.rect());
+        }
+    }
+
+    /// Envia janela para trás.
+    pub fn send_to_back(&mut self, id: u32) {
+        if let Some(window) = self.windows.get(&id) {
+            let layer = window.layer;
+            self.layers.get_mut(layer).send_to_back(WindowId(id));
+            self.damage.add(window.rect());
+        }
+    }
+
+    /// Altera layer de uma janela.
+    pub fn set_window_layer(&mut self, id: u32, new_layer: LayerType) {
         if let Some(window) = self.windows.get_mut(&id) {
-            if !window.has_content {
-                window.set_has_content();
-                crate::println!("[Render] Janela {} recebeu primeiro conteúdo", id);
+            let old_layer = window.layer;
+            if old_layer != new_layer {
+                self.layers.move_window(WindowId(id), old_layer, new_layer);
+                window.set_layer(new_layer);
+                self.damage.add(window.rect());
             }
         }
     }
 
-    /// Renderiza um frame completo se houver damage.
-    pub fn render(&mut self) -> SysResult<()> {
-        // Se não há nada para redesenhar, economizar CPU
-        if !self.damage.has_damage() && self.frame_count > 0 {
-            return Ok(());
+    /// Marca que janela recebeu conteúdo.
+    pub fn mark_window_has_content(&mut self, id: u32) {
+        if let Some(window) = self.windows.get_mut(&id) {
+            if !window.has_content {
+                window.set_has_content();
+                self.damage.add(window.rect());
+            }
         }
-
-        self.frame_count += 1;
-
-        if self.frame_count == 1 {
-            crate::println!("[Render] Primeiro frame!");
-        }
-
-        // Log window count every 300 frames (~5 seconds)
-        if self.frame_count % 300 == 0 {
-            crate::println!(
-                "[Render] Frame {}, {} janelas",
-                self.frame_count,
-                self.windows.len()
-            );
-        }
-
-        // 1. Limpar backbuffer com cor de fundo
-        let size = self.size();
-        Blitter::fill_rect(
-            &mut self.backbuffer,
-            size,
-            Rect::from_size(size),
-            BACKGROUND_COLOR,
-        );
-
-        // 2. Coletar IDs de janelas com conteúdo e ordenar por layer (Background primeiro)
-        let mut windows_to_render: Vec<u32> = self
-            .windows
-            .iter()
-            .filter(|(_, w)| w.has_content) // Só renderizar janelas que já receberam conteúdo
-            .map(|(id, _)| *id)
-            .collect();
-
-        // Ordenar por layer type (Background=0 primeiro, Normal=1 depois, etc.)
-        windows_to_render.sort_by(|a, b| {
-            let layer_a = self
-                .windows
-                .get(a)
-                .map(|w| w.layer)
-                .unwrap_or(LayerType::Normal);
-            let layer_b = self
-                .windows
-                .get(b)
-                .map(|w| w.layer)
-                .unwrap_or(LayerType::Normal);
-            layer_a.cmp(&layer_b)
-        });
-
-        // 3. Compor janelas (na ordem: Background -> Normal -> Panel -> Overlay)
-        for window_id in windows_to_render {
-            self.composite_window_by_id(window_id);
-        }
-
-        // 4. Apresentar no display
-        self.present()?;
-
-        // 5. Limpar damage para próximo frame
-        self.damage.clear();
-
-        Ok(())
     }
 
-    /// Renderiza um frame com cursor na posição especificada.
-    pub fn render_with_cursor(&mut self, mouse_x: i32, mouse_y: i32) -> SysResult<()> {
+    /// Marca janela como danificada.
+    pub fn mark_damage(&mut self, id: u32) {
+        if let Some(window) = self.windows.get(&id) {
+            self.damage.add(window.rect());
+        }
+    }
+
+    /// Marca tela inteira como danificada.
+    pub fn full_screen_damage(&mut self) {
+        self.damage
+            .damage_full(self.display_info.width, self.display_info.height);
+    }
+
+    // =========================================================================
+    // HIT TESTING
+    // =========================================================================
+
+    /// Retorna ID da janela na posição dada (se houver).
+    pub fn window_at_point(&self, x: i32, y: i32) -> Option<u32> {
+        for window_id in self.layers.iter_top_to_bottom() {
+            if let Some(window) = self.windows.get(&window_id.0) {
+                if window.is_visible() && window.contains_point(x, y) {
+                    return Some(window_id.0);
+                }
+            }
+        }
+        None
+    }
+
+    // =========================================================================
+    // FOCO
+    // =========================================================================
+
+    /// Define janela com foco.
+    pub fn set_focus(&mut self, id: Option<u32>) {
+        if self.focused_window != id {
+            // Marcar janela antiga como danificada (para remover indicador de foco)
+            if let Some(old_id) = self.focused_window {
+                if let Some(window) = self.windows.get(&old_id) {
+                    self.damage.add(window.rect());
+                }
+            }
+
+            self.focused_window = id;
+
+            // Marcar nova janela como danificada
+            if let Some(new_id) = id {
+                if let Some(window) = self.windows.get(&new_id) {
+                    self.damage.add(window.rect());
+                }
+            }
+        }
+    }
+
+    /// Retorna janela com foco.
+    #[inline]
+    pub fn focused_window(&self) -> Option<u32> {
+        self.focused_window
+    }
+
+    // =========================================================================
+    // CURSOR
+    // =========================================================================
+
+    /// Atualiza posição do cursor.
+    pub fn set_cursor_position(&mut self, x: i32, y: i32) {
+        self.cursor_pos = Point::new(x, y);
+    }
+
+    /// Define visibilidade do cursor.
+    pub fn set_cursor_visible(&mut self, visible: bool) {
+        self.cursor_visible = visible;
+    }
+
+    // =========================================================================
+    // RENDERIZAÇÃO
+    // =========================================================================
+
+    /// Renderiza um frame com cursor.
+    pub fn render(&mut self, mouse_x: i32, mouse_y: i32) -> SysResult<()> {
+        self.cursor_pos = Point::new(mouse_x, mouse_y);
         self.frame_count += 1;
 
-        // Log periódico (a cada ~100 frames)
+        // Log periódico
         if self.frame_count % 500 == 0 {
-            crate::println!(
-                "[Render] Frame {}, {} janelas",
+            redpowder::println!(
+                "[Render] Frame {}, {} janelas, foco={:?}",
                 self.frame_count,
-                self.windows.len()
+                self.windows.len(),
+                self.focused_window
             );
         }
 
-        // 1. Limpar backbuffer com cor de fundo
+        // 1. Limpar backbuffer
         let size = self.size();
         Blitter::fill_rect(
             &mut self.backbuffer,
@@ -282,65 +336,68 @@ impl RenderEngine {
             BACKGROUND_COLOR,
         );
 
-        // 2. Coletar IDs de janelas com conteúdo e ordenar por layer (Background primeiro)
-        let mut windows_to_render: Vec<u32> = self
-            .windows
-            .iter()
-            .filter(|(_, w)| w.has_content)
-            .map(|(id, _)| *id)
+        // 2. Coletar janelas para renderizar (ordenadas por layer)
+        let windows_to_render: Vec<u32> = self
+            .layers
+            .iter_bottom_to_top()
+            .filter(|id| {
+                self.windows
+                    .get(&id.0)
+                    .map(|w| w.is_visible())
+                    .unwrap_or(false)
+            })
+            .map(|id| id.0)
             .collect();
-
-        windows_to_render.sort_by(|a, b| {
-            let layer_a = self
-                .windows
-                .get(a)
-                .map(|w| w.layer)
-                .unwrap_or(LayerType::Normal);
-            let layer_b = self
-                .windows
-                .get(b)
-                .map(|w| w.layer)
-                .unwrap_or(LayerType::Normal);
-            layer_a.cmp(&layer_b)
-        });
 
         // 3. Compor janelas
         for window_id in windows_to_render {
-            self.composite_window_by_id(window_id);
+            self.composite_window(window_id);
         }
 
-        // 4. Desenhar cursor do mouse (por cima de tudo)
-        crate::ui::cursor::draw(&mut self.backbuffer, size, mouse_x, mouse_y);
+        // 4. Desenhar cursor
+        if self.cursor_visible {
+            crate::ui::cursor::draw(&mut self.backbuffer, size, mouse_x, mouse_y);
+        }
 
-        // 5. Apresentar no display
+        // 5. Apresentar
         self.present()?;
 
-        // 6. Limpar damage para próximo frame
+        // 6. Limpar damage
         self.damage.clear();
 
         Ok(())
     }
 
-    /// Compõe uma janela no backbuffer por ID.
-    fn composite_window_by_id(&mut self, window_id: u32) {
-        // Extrair dados necessários
-        let window = match self.windows.get(&window_id) {
+    /// Compõe uma janela no backbuffer.
+    fn composite_window(&mut self, id: u32) {
+        let window = match self.windows.get(&id) {
             Some(w) => w,
             None => return,
         };
 
-        let src_size = window.size;
-        let position = window.position;
-        let is_transparent = window.flags.has(gfx_types::WindowFlags::TRANSPARENT);
         let src_pixels = window.pixels();
+        let src_size = window.size;
         let dst_size = self.size();
+        let position = window.position;
 
-        // Fazer blit
-        if is_transparent {
+        // Desenhar sombra se habilitado
+        if window.has_shadow() {
+            Blitter::draw_shadow(
+                &mut self.backbuffer,
+                dst_size,
+                window.rect(),
+                SHADOW_OFFSET,
+                SHADOW_BLUR,
+                SHADOW_COLOR,
+            );
+        }
+
+        // Blit
+        if window.is_transparent() {
             Blitter::blit_alpha(
                 &mut self.backbuffer,
                 dst_size,
-                &src_pixels,
+                src_pixels,
                 src_size,
                 Rect::from_size(src_size),
                 position,
@@ -349,46 +406,27 @@ impl RenderEngine {
             Blitter::blit_opaque(
                 &mut self.backbuffer,
                 dst_size,
-                &src_pixels,
+                src_pixels,
                 src_size,
                 Rect::from_size(src_size),
                 position,
             );
         }
-    }
 
-    /// Compõe uma janela no backbuffer.
-    fn composite_window(&mut self, window: &Window) {
-        let src_pixels = window.pixels();
-        let src_size = window.size;
-        let dst_size = self.size();
-        let dst_point = window.position;
-
-        // Usar blit com alpha se janela suporta transparência
-        if window.flags.has(gfx_types::WindowFlags::TRANSPARENT) {
-            Blitter::blit_alpha(
+        // Indicador de foco (borda colorida)
+        if self.focused_window == Some(id) && window.has_decorations() {
+            Blitter::stroke_rect(
                 &mut self.backbuffer,
                 dst_size,
-                &src_pixels,
-                src_size,
-                Rect::from_size(src_size),
-                dst_point,
-            );
-        } else {
-            Blitter::blit_opaque(
-                &mut self.backbuffer,
-                dst_size,
-                &src_pixels,
-                src_size,
-                Rect::from_size(src_size),
-                dst_point,
+                window.rect(),
+                2,
+                Color::REDSTONE_ACCENT,
             );
         }
     }
 
     /// Envia backbuffer para o display.
     fn present(&self) -> SysResult<()> {
-        // Converter para slice de bytes
         let byte_slice = unsafe {
             core::slice::from_raw_parts(
                 self.backbuffer.as_ptr() as *const u8,
@@ -396,14 +434,7 @@ impl RenderEngine {
             )
         };
 
-        // Enviar para framebuffer via syscall
-        write_framebuffer(0, byte_slice)?;
-
+        write_pixels(0, byte_slice)?;
         Ok(())
-    }
-
-    /// Retorna estatísticas.
-    pub fn stats(&self) -> (u64, usize) {
-        (self.frame_count, self.windows.len())
     }
 }

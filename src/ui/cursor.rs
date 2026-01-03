@@ -1,85 +1,123 @@
-//! # Cursor do Mouse - Firefly Compositor
+//! # Cursor
 //!
-//! Desenho do cursor na tela.
+//! Desenho do cursor do mouse.
 
-use gfx_types::{Color, Point, Size};
+use gfx_types::color::Color;
+use gfx_types::geometry::Size;
 
-/// Dados do cursor em forma de seta (12x18 pixels)
-/// 0 = transparente, 1 = branco (borda), 2 = preto (preenchimento)
-pub const CURSOR_DATA: [[u8; 12]; 18] = [
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-    [1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0],
-    [1, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0],
-    [1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0],
-    [1, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0],
-    [1, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0],
-    [1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0],
-    [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0],
-    [1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1],
-    [1, 2, 2, 2, 1, 2, 2, 1, 0, 0, 0, 0],
-    [1, 2, 2, 1, 0, 1, 2, 2, 1, 0, 0, 0],
-    [1, 2, 1, 0, 0, 1, 2, 2, 1, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0, 1, 2, 2, 1, 0, 0],
-    [1, 0, 0, 0, 0, 0, 1, 2, 2, 1, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
+// =============================================================================
+// CONSTANTES
+// =============================================================================
+
+/// Largura do cursor.
+const CURSOR_WIDTH: usize = 12;
+
+/// Altura do cursor.
+const CURSOR_HEIGHT: usize = 19;
+
+/// Bitmap do cursor padrão (seta).
+/// 0 = transparente, 1 = preto (contorno), 2 = branco (preenchimento)
+#[rustfmt::skip]
+const CURSOR_BITMAP: [[u8; CURSOR_WIDTH]; CURSOR_HEIGHT] = [
+    [1,0,0,0,0,0,0,0,0,0,0,0],
+    [1,1,0,0,0,0,0,0,0,0,0,0],
+    [1,2,1,0,0,0,0,0,0,0,0,0],
+    [1,2,2,1,0,0,0,0,0,0,0,0],
+    [1,2,2,2,1,0,0,0,0,0,0,0],
+    [1,2,2,2,2,1,0,0,0,0,0,0],
+    [1,2,2,2,2,2,1,0,0,0,0,0],
+    [1,2,2,2,2,2,2,1,0,0,0,0],
+    [1,2,2,2,2,2,2,2,1,0,0,0],
+    [1,2,2,2,2,2,2,2,2,1,0,0],
+    [1,2,2,2,2,2,2,2,2,2,1,0],
+    [1,2,2,2,2,2,2,1,1,1,1,1],
+    [1,2,2,2,1,2,2,1,0,0,0,0],
+    [1,2,2,1,0,1,2,2,1,0,0,0],
+    [1,2,1,0,0,1,2,2,1,0,0,0],
+    [1,1,0,0,0,0,1,2,2,1,0,0],
+    [1,0,0,0,0,0,1,2,2,1,0,0],
+    [0,0,0,0,0,0,0,1,2,1,0,0],
+    [0,0,0,0,0,0,0,0,1,0,0,0],
 ];
 
-pub const CURSOR_WIDTH: u32 = 12;
-pub const CURSOR_HEIGHT: u32 = 18;
+/// Cor do contorno do cursor.
+const CURSOR_OUTLINE: Color = Color::BLACK;
 
-/// Desenha cursor em um buffer.
+/// Cor do preenchimento do cursor.
+const CURSOR_FILL: Color = Color::WHITE;
+
+// =============================================================================
+// FUNÇÕES
+// =============================================================================
+
+/// Desenha o cursor na posição especificada.
 pub fn draw(buffer: &mut [u32], buffer_size: Size, x: i32, y: i32) {
-    for dy in 0..CURSOR_HEIGHT {
-        for dx in 0..CURSOR_WIDTH {
-            let px = x + dx as i32;
-            let py = y + dy as i32;
+    let stride = buffer_size.width as usize;
 
-            // Verificar bounds
-            if px < 0 || py < 0 || px >= buffer_size.width as i32 || py >= buffer_size.height as i32
-            {
+    for py in 0..CURSOR_HEIGHT {
+        let screen_y = y as usize + py;
+        if screen_y >= buffer_size.height as usize {
+            continue;
+        }
+
+        for px in 0..CURSOR_WIDTH {
+            let screen_x = x as usize + px;
+            if screen_x >= buffer_size.width as usize {
                 continue;
             }
 
-            let pixel = CURSOR_DATA[dy as usize][dx as usize];
-            let color = match pixel {
-                1 => Some(Color::WHITE), // Borda branca
-                2 => Some(Color::BLACK), // Preenchimento preto
-                _ => None,               // Transparente
-            };
+            let pixel_type = CURSOR_BITMAP[py][px];
+            if pixel_type == 0 {
+                continue; // Transparente
+            }
 
-            if let Some(c) = color {
-                let idx = (py as usize * buffer_size.width as usize) + px as usize;
-                if idx < buffer.len() {
-                    buffer[idx] = c.as_u32();
-                }
+            let idx = screen_y * stride + screen_x;
+            if idx < buffer.len() {
+                buffer[idx] = match pixel_type {
+                    1 => CURSOR_OUTLINE.as_u32(),
+                    2 => CURSOR_FILL.as_u32(),
+                    _ => continue,
+                };
             }
         }
     }
 }
 
-/// Apaga cursor desenhando o fundo na posição.
-pub fn erase(buffer: &mut [u32], buffer_size: Size, x: i32, y: i32, bg_color: Color) {
-    for dy in 0..CURSOR_HEIGHT {
-        for dx in 0..CURSOR_WIDTH {
-            let px = x + dx as i32;
-            let py = y + dy as i32;
+/// Desenha cursor com cor customizada.
+pub fn draw_colored(
+    buffer: &mut [u32],
+    buffer_size: Size,
+    x: i32,
+    y: i32,
+    outline: Color,
+    fill: Color,
+) {
+    let stride = buffer_size.width as usize;
 
-            // Verificar bounds
-            if px < 0 || py < 0 || px >= buffer_size.width as i32 || py >= buffer_size.height as i32
-            {
+    for py in 0..CURSOR_HEIGHT {
+        let screen_y = y as usize + py;
+        if screen_y >= buffer_size.height as usize {
+            continue;
+        }
+
+        for px in 0..CURSOR_WIDTH {
+            let screen_x = x as usize + px;
+            if screen_x >= buffer_size.width as usize {
                 continue;
             }
 
-            // Apenas apagar pixels não-transparentes do cursor
-            let pixel = CURSOR_DATA[dy as usize][dx as usize];
-            if pixel != 0 {
-                let idx = (py as usize * buffer_size.width as usize) + px as usize;
-                if idx < buffer.len() {
-                    buffer[idx] = bg_color.as_u32();
-                }
+            let pixel_type = CURSOR_BITMAP[py][px];
+            if pixel_type == 0 {
+                continue;
+            }
+
+            let idx = screen_y * stride + screen_x;
+            if idx < buffer.len() {
+                buffer[idx] = match pixel_type {
+                    1 => outline.as_u32(),
+                    2 => fill.as_u32(),
+                    _ => continue,
+                };
             }
         }
     }

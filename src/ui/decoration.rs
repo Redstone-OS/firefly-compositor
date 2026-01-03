@@ -1,221 +1,107 @@
-//! # Window Decoration - Firefly Compositor
+//! # Window Decorations
 //!
-//! Desenha decorações de janela (título, bordas, botões).
+//! Desenho de decorações de janelas (título, botões).
 
-use gfx_types::{Color, Size};
+use gfx_types::color::Color;
+use gfx_types::geometry::{Rect, Size};
 
-// ============================================================================
+use crate::render::Blitter;
+
+// =============================================================================
 // CONSTANTES
-// ============================================================================
+// =============================================================================
 
+/// Altura da barra de título.
 pub const TITLEBAR_HEIGHT: u32 = 24;
-pub const BORDER_WIDTH: u32 = 2;
 
-const TITLEBAR_COLOR_ACTIVE: Color = Color::WHITE;
-const TITLEBAR_COLOR_INACTIVE: Color = Color::rgb(200, 200, 200);
-const BORDER_COLOR_ACTIVE: Color = Color::WHITE;
-const BORDER_COLOR_INACTIVE: Color = Color::rgb(200, 200, 200);
-const TEXT_COLOR: Color = Color::BLACK;
+/// Largura da borda.
+pub const BORDER_WIDTH: u32 = 1;
 
-const BTN_SIZE: u32 = TITLEBAR_HEIGHT - 4;
-const BTN_CLOSE_COLOR: Color = Color::rgb(232, 17, 35);
-const BTN_MIN_COLOR: Color = Color::rgb(200, 200, 200); // Cinza para minimizar
+/// Cor da barra de título (ativa).
+pub const TITLEBAR_COLOR_ACTIVE: Color = Color(0xFF3d3d3d);
 
-// ============================================================================
-// FUNÇÕES AUXILIARES
-// ============================================================================
+/// Cor da barra de título (inativa).
+pub const TITLEBAR_COLOR_INACTIVE: Color = Color(0xFF2d2d2d);
 
-/// Preenche retângulo em um buffer.
-fn fill_rect(buffer: &mut [u32], buffer_size: Size, x: i32, y: i32, w: u32, h: u32, color: Color) {
-    let color_u32 = color.as_u32();
-    for dy in 0..h {
-        let py = y + dy as i32;
-        if py < 0 || py >= buffer_size.height as i32 {
-            continue;
-        }
-        for dx in 0..w {
-            let px = x + dx as i32;
-            if px < 0 || px >= buffer_size.width as i32 {
-                continue;
-            }
-            let idx = (py as usize * buffer_size.width as usize) + px as usize;
-            if idx < buffer.len() {
-                buffer[idx] = color_u32;
-            }
-        }
-    }
-}
+/// Cor da borda (ativa).
+pub const BORDER_COLOR_ACTIVE: Color = Color(0xFF505050);
 
-/// Desenha um pixel em um buffer.
-fn put_pixel(buffer: &mut [u32], buffer_size: Size, x: i32, y: i32, color: Color) {
-    if x < 0 || y < 0 || x >= buffer_size.width as i32 || y >= buffer_size.height as i32 {
-        return;
-    }
-    let idx = (y as usize * buffer_size.width as usize) + x as usize;
-    if idx < buffer.len() {
-        buffer[idx] = color.as_u32();
-    }
-}
+/// Cor da borda (inativa).
+pub const BORDER_COLOR_INACTIVE: Color = Color(0xFF3d3d3d);
 
-// ============================================================================
-// FUNÇÕES PÚBLICAS
-// ============================================================================
+/// Cor do texto.
+pub const TEXT_COLOR: Color = Color::WHITE;
 
-/// Desenha a decoração completa de uma janela.
+/// Tamanho dos botões.
+pub const BTN_SIZE: u32 = 20;
+
+/// Cor do botão fechar.
+pub const BTN_CLOSE_COLOR: Color = Color::REDSTONE_ACCENT;
+
+/// Cor do botão minimizar.
+pub const BTN_MINIMIZE_COLOR: Color = Color(0xFF4a90d9);
+
+// =============================================================================
+// FUNÇÕES
+// =============================================================================
+
+/// Desenha decorações de janela.
 pub fn draw_window_decoration(
     buffer: &mut [u32],
     buffer_size: Size,
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
-    _title: &str,
-    is_active: bool,
+    window_rect: Rect,
+    title: &str,
+    is_focused: bool,
 ) {
-    let title_color = if is_active {
+    let titlebar_color = if is_focused {
         TITLEBAR_COLOR_ACTIVE
     } else {
         TITLEBAR_COLOR_INACTIVE
     };
-    let border_color = if is_active {
+
+    let border_color = if is_focused {
         BORDER_COLOR_ACTIVE
     } else {
         BORDER_COLOR_INACTIVE
     };
 
-    // Top (Título)
-    fill_rect(
-        buffer,
-        buffer_size,
-        x as i32,
-        y as i32,
-        w,
+    // 1. Barra de título
+    let titlebar_rect = Rect::new(
+        window_rect.x,
+        window_rect.y,
+        window_rect.width,
         TITLEBAR_HEIGHT,
-        title_color,
     );
+    Blitter::fill_rect(buffer, buffer_size, titlebar_rect, titlebar_color);
 
-    // Left border
-    fill_rect(
-        buffer,
-        buffer_size,
-        x as i32,
-        (y + TITLEBAR_HEIGHT) as i32,
-        BORDER_WIDTH,
-        h - TITLEBAR_HEIGHT,
-        border_color,
-    );
+    // 2. Borda
+    Blitter::stroke_rect(buffer, buffer_size, window_rect, BORDER_WIDTH, border_color);
 
-    // Right border
-    fill_rect(
-        buffer,
-        buffer_size,
-        (x + w - BORDER_WIDTH) as i32,
-        (y + TITLEBAR_HEIGHT) as i32,
-        BORDER_WIDTH,
-        h - TITLEBAR_HEIGHT,
-        border_color,
-    );
+    // 3. Botão fechar (X)
+    let close_x = window_rect.right() - BTN_SIZE as i32 - 2;
+    let close_y = window_rect.y + 2;
+    let close_rect = Rect::new(close_x, close_y, BTN_SIZE, BTN_SIZE);
+    Blitter::fill_rect(buffer, buffer_size, close_rect, BTN_CLOSE_COLOR);
+    draw_close_icon(buffer, buffer_size, close_x + 4, close_y + 4);
 
-    // Bottom border
-    fill_rect(
-        buffer,
-        buffer_size,
-        x as i32,
-        (y + h - BORDER_WIDTH) as i32,
-        w,
-        BORDER_WIDTH,
-        border_color,
-    );
-
-    // Botão Fechar (X)
-    draw_close_button(buffer, buffer_size, x + w - BTN_SIZE - 2, y + 2);
-
-    // Botão Minimizar (-)
-    draw_minimize_button(buffer, buffer_size, x + w - (BTN_SIZE * 2) - 6, y + 2);
-
-    // Título indicador (3 pontos)
-    fill_rect(
-        buffer,
-        buffer_size,
-        (x + 10) as i32,
-        (y + 10) as i32,
-        4,
-        4,
-        TEXT_COLOR,
-    );
-    fill_rect(
-        buffer,
-        buffer_size,
-        (x + 16) as i32,
-        (y + 10) as i32,
-        4,
-        4,
-        TEXT_COLOR,
-    );
-    fill_rect(
-        buffer,
-        buffer_size,
-        (x + 22) as i32,
-        (y + 10) as i32,
-        4,
-        4,
-        TEXT_COLOR,
-    );
+    // 4. Botão minimizar (-)
+    let min_x = close_x - BTN_SIZE as i32 - 4;
+    let min_rect = Rect::new(min_x, close_y, BTN_SIZE, BTN_SIZE);
+    Blitter::fill_rect(buffer, buffer_size, min_rect, BTN_MINIMIZE_COLOR);
+    draw_minimize_icon(buffer, buffer_size, min_x + 4, close_y + 8);
 }
 
-fn draw_close_button(buffer: &mut [u32], buffer_size: Size, x: u32, y: u32) {
-    fill_rect(
-        buffer,
-        buffer_size,
-        x as i32,
-        y as i32,
-        BTN_SIZE,
-        BTN_SIZE,
-        BTN_CLOSE_COLOR,
-    );
-
-    // X branco simples (diagonal)
-    let x_start = x + 4;
-    let y_start = y + 4;
-    let size = BTN_SIZE - 8;
-
-    for i in 0..size {
-        put_pixel(
-            buffer,
-            buffer_size,
-            (x_start + i) as i32,
-            (y_start + i) as i32,
-            Color::WHITE,
-        );
-        put_pixel(
-            buffer,
-            buffer_size,
-            (x_start + size - 1 - i) as i32,
-            (y_start + i) as i32,
-            Color::WHITE,
-        );
+/// Desenha ícone X (fechar).
+fn draw_close_icon(buffer: &mut [u32], size: Size, x: i32, y: i32) {
+    let color = Color::WHITE;
+    for i in 0..12 {
+        Blitter::put_pixel(buffer, size, x + i, y + i, color);
+        Blitter::put_pixel(buffer, size, x + 11 - i, y + i, color);
     }
 }
 
-fn draw_minimize_button(buffer: &mut [u32], buffer_size: Size, x: u32, y: u32) {
-    fill_rect(
-        buffer,
-        buffer_size,
-        x as i32,
-        y as i32,
-        BTN_SIZE,
-        BTN_SIZE,
-        BTN_MIN_COLOR,
-    );
-
-    // Linha branca horizontal
-    fill_rect(
-        buffer,
-        buffer_size,
-        (x + 4) as i32,
-        (y + BTN_SIZE - 6) as i32,
-        BTN_SIZE - 8,
-        2,
-        Color::BLACK,
-    );
+/// Desenha ícone - (minimizar).
+fn draw_minimize_icon(buffer: &mut [u32], size: Size, x: i32, y: i32) {
+    let color = Color::WHITE;
+    Blitter::fill_rect(buffer, size, Rect::new(x, y, 12, 2), color);
 }

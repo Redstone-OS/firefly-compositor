@@ -2,11 +2,10 @@
 //!
 //! Motor de renderização do compositor.
 //!
-//! ## Responsabilidades
+//! ## Componentes
 //!
-//! - Composição de janelas no backbuffer
-//! - Operações de blit otimizadas
-//! - Gerenciamento do backbuffer
+//! - **Blitter**: Operações de cópia de pixels otimizadas
+//! - **RenderEngine**: Motor de composição principal
 
 pub mod blitter;
 pub mod compositor;
