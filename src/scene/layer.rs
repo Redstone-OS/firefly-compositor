@@ -11,6 +11,8 @@ use super::window::WindowId;
 // LAYER
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Uma camada de composição.
 pub struct Layer {
     /// Tipo da camada.
@@ -51,6 +53,8 @@ impl Layer {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Move janela para o fundo.
     pub fn send_to_back(&mut self, id: WindowId) {
         if let Some(pos) = self.windows.iter().position(|w| *w == id) {
@@ -69,18 +73,24 @@ impl Layer {
         self.windows.iter().rev().copied()
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Número de janelas.
     #[inline]
     pub fn len(&self) -> usize {
         self.windows.len()
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna se está vazia.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.windows.is_empty()
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Contém janela?
     #[inline]
     pub fn contains(&self, id: WindowId) -> bool {
@@ -124,6 +134,8 @@ impl LayerManager {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna referência à camada.
     pub fn get(&self, layer_type: LayerType) -> &Layer {
         match layer_type {
@@ -166,6 +178,8 @@ impl LayerManager {
         self.cursor.remove_window(id);
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Move janela entre camadas.
     pub fn move_window(&mut self, id: WindowId, from: LayerType, to: LayerType) {
         self.get_mut(from).remove_window(id);
@@ -196,6 +210,8 @@ impl LayerManager {
             .chain(self.background.iter_top_to_bottom())
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Total de janelas em todas as camadas.
     pub fn total_windows(&self) -> usize {
         self.background.len()

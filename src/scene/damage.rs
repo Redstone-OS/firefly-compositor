@@ -35,6 +35,8 @@ impl DamageTracker {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Cria tracker com tamanho de tela.
     pub fn with_size(width: u32, height: u32) -> Self {
         Self {
@@ -85,18 +87,24 @@ impl DamageTracker {
         self.regions.clear();
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna se há alguma região danificada.
     #[inline]
     pub fn has_damage(&self) -> bool {
         self.full_damage || !self.regions.is_empty()
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna se é dano total.
     #[inline]
     pub fn is_full_damage(&self) -> bool {
         self.full_damage
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna as regiões danificadas.
     pub fn regions(&self) -> &[Rect] {
         &self.regions
@@ -136,6 +144,8 @@ impl DamageTracker {
         self.regions.push(bounds);
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna e limpa as regiões.
     pub fn take(&mut self) -> Vec<Rect> {
         let mut result = core::mem::take(&mut self.regions);

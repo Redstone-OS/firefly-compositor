@@ -41,6 +41,8 @@ impl InputManager {
         self.mouse_pos = Point::new(x, y);
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Atualiza estado do teclado.
     pub fn update_keyboard(&mut self, keycode: KeyCode, pressed: bool) {
         self.last_key = Some((keycode, pressed));
@@ -70,28 +72,38 @@ impl InputManager {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Verifica se botão foi pressionado neste frame.
     pub fn button_just_pressed(&self, button: MouseButton) -> bool {
         let mask = button.mask();
         (self.mouse.buttons & mask) != 0 && (self.prev_buttons & mask) == 0
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Verifica se botão foi solto neste frame.
     pub fn button_just_released(&self, button: MouseButton) -> bool {
         let mask = button.mask();
         (self.mouse.buttons & mask) == 0 && (self.prev_buttons & mask) != 0
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Verifica se botão está pressionado.
     pub fn button_pressed(&self, button: MouseButton) -> bool {
         self.mouse.is_pressed(button)
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna a última tecla pressionada e limpa.
     pub fn take_key(&mut self) -> Option<(KeyCode, bool)> {
         self.last_key.take()
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Limpa estado da tecla.
     pub fn clear_key(&mut self) {
         self.last_key = None;

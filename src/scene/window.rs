@@ -15,11 +15,14 @@ use redpowder::ipc::SharedMemory;
 /// ID único de janela.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WindowId(pub u32);
-
+// TODO: Revisar no futuro
+#[allow(unused)]
 impl WindowId {
     pub const INVALID: Self = Self(0);
 
     #[inline]
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     pub fn is_valid(&self) -> bool {
         self.0 != 0
     }
@@ -29,6 +32,8 @@ impl WindowId {
 // WINDOW
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Janela gerenciada pelo compositor.
 pub struct Window {
     /// ID único.
@@ -125,6 +130,8 @@ impl Window {
     // MODIFICAÇÕES
     // =========================================================================
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Altera layer da janela.
     pub fn set_layer(&mut self, layer: LayerType) {
         self.layer = layer;
@@ -144,6 +151,8 @@ impl Window {
         self.dirty = true;
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Move a janela por um delta.
     #[inline]
     pub fn move_by(&mut self, dx: i32, dy: i32) {
@@ -152,6 +161,8 @@ impl Window {
         self.dirty = true;
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Redimensiona a janela.
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -159,6 +170,8 @@ impl Window {
         self.dirty = true;
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Define o estado da janela.
     pub fn set_state(&mut self, state: WindowState) {
         if state == WindowState::Maximized && self.state == WindowState::Normal {

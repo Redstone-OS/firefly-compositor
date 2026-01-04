@@ -107,12 +107,16 @@ impl RenderEngine {
         Size::new(self.display_info.width, self.display_info.height)
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna informações do display.
     #[inline]
     pub fn display_info(&self) -> &DisplayInfo {
         &self.display_info
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna número de frames renderizados.
     #[inline]
     pub fn frame_count(&self) -> u64 {
@@ -203,6 +207,8 @@ impl RenderEngine {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Envia janela para trás.
     pub fn send_to_back(&mut self, id: u32) {
         if let Some(window) = self.windows.get(&id) {
@@ -212,6 +218,8 @@ impl RenderEngine {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Altera layer de uma janela.
     pub fn set_window_layer(&mut self, id: u32, new_layer: LayerType) {
         if let Some(window) = self.windows.get_mut(&id) {
@@ -288,6 +296,8 @@ impl RenderEngine {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna janela com foco.
     #[inline]
     pub fn focused_window(&self) -> Option<u32> {
@@ -298,11 +308,15 @@ impl RenderEngine {
     // CURSOR
     // =========================================================================
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Atualiza posição do cursor.
     pub fn set_cursor_position(&mut self, x: i32, y: i32) {
         self.cursor_pos = Point::new(x, y);
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Define visibilidade do cursor.
     pub fn set_cursor_visible(&mut self, visible: bool) {
         self.cursor_visible = visible;

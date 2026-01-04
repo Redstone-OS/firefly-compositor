@@ -10,6 +10,8 @@
 //! - Gradientes horizontais/verticais
 //! - Sombras e efeitos
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 use gfx_types::color::{BlendMode, Color};
 use gfx_types::geometry::{Point, Rect, Size};
 
@@ -127,6 +129,8 @@ impl Blitter {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Blit com escala simples (nearest neighbor).
     #[inline]
     pub fn blit_scaled(
@@ -210,6 +214,8 @@ impl Blitter {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Preenche retângulo com gradiente horizontal.
     #[inline]
     pub fn fill_gradient_h(
@@ -242,6 +248,8 @@ impl Blitter {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Preenche retângulo com gradiente vertical.
     #[inline]
     pub fn fill_gradient_v(
@@ -362,6 +370,8 @@ impl Blitter {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Desenha um pixel com alpha blending.
     #[inline]
     pub fn put_pixel_blend(dst: &mut [u32], dst_size: Size, x: i32, y: i32, color: Color) {
@@ -408,6 +418,8 @@ fn blend_over(src: u32, dst: u32) -> u32 {
     0xFF000000 | (out_r << 16) | (out_g << 8) | out_b
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Alpha blend com alpha de destino.
 #[inline]
 fn blend_over_with_dst_alpha(src: u32, dst: u32) -> u32 {

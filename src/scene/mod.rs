@@ -13,5 +13,7 @@ pub mod layer;
 pub mod window;
 
 pub use damage::DamageTracker;
+// TODO: Revisar no futuro
+#[allow(unused)]
 pub use layer::{Layer, LayerManager};
 pub use window::{Window, WindowId};

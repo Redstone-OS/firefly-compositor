@@ -28,6 +28,8 @@ impl DragState {
         self.window_id = None;
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     pub fn is_dragging(&self) -> bool {
         self.window_id.is_some()
     }

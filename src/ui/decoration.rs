@@ -12,32 +12,52 @@ use crate::render::Blitter;
 // =============================================================================
 
 /// Altura da barra de título.
+// TODO: Revisar no futuro
+#[allow(unused)]
 pub const TITLEBAR_HEIGHT: u32 = 24;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Largura da borda.
 pub const BORDER_WIDTH: u32 = 1;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Cor da barra de título (ativa).
 pub const TITLEBAR_COLOR_ACTIVE: Color = Color(0xFF3d3d3d);
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Cor da barra de título (inativa).
 pub const TITLEBAR_COLOR_INACTIVE: Color = Color(0xFF2d2d2d);
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Cor da borda (ativa).
 pub const BORDER_COLOR_ACTIVE: Color = Color(0xFF505050);
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Cor da borda (inativa).
 pub const BORDER_COLOR_INACTIVE: Color = Color(0xFF3d3d3d);
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Cor do texto.
 pub const TEXT_COLOR: Color = Color::WHITE;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Tamanho dos botões.
 pub const BTN_SIZE: u32 = 20;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Cor do botão fechar.
 pub const BTN_CLOSE_COLOR: Color = Color::REDSTONE_ACCENT;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Cor do botão minimizar.
 pub const BTN_MINIMIZE_COLOR: Color = Color(0xFF4a90d9);
 
@@ -45,6 +65,8 @@ pub const BTN_MINIMIZE_COLOR: Color = Color(0xFF4a90d9);
 // FUNÇÕES
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Desenha decorações de janela.
 pub fn draw_window_decoration(
     buffer: &mut [u32],
