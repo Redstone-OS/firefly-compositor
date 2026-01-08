@@ -61,14 +61,18 @@ pub struct Server {
 impl Server {
     /// Cria novo servidor.
     pub fn new() -> SysResult<Self> {
-        redpowder::println!("[Firefly] Inicializando servidor...");
+        // Use write_str direto para garantir que o log aparece (sem alocação)
+        let _ = redpowder::console::write_str("[Firefly] Server::new() ENTRY\n");
 
         // 1. Criar porta IPC
+        let _ = redpowder::console::write_str("[Firefly] Criando porta IPC...\n");
         let port = Port::create(COMPOSITOR_PORT, 128)?;
-        redpowder::println!("[Firefly] Porta '{}' criada", COMPOSITOR_PORT);
+        let _ = redpowder::console::write_str("[Firefly] Porta IPC criada OK\n");
 
         // 2. Obter informações do display
+        let _ = redpowder::console::write_str("[Firefly] Obtendo info display...\n");
         let fb_info = get_info()?;
+        let _ = redpowder::console::write_str("[Firefly] Display info OK\n");
         redpowder::println!(
             "[Firefly] Display: {}x{} stride={}",
             fb_info.width,

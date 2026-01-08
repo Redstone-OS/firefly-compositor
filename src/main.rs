@@ -59,6 +59,10 @@ static ALLOCATOR: redpowder::mem::heap::SyscallAllocator = redpowder::mem::heap:
 #[no_mangle]
 #[link_section = ".text._start"]
 pub extern "C" fn _start() -> ! {
+    // Debug de baixo nível - escrita direta sem formatação para diagnosticar travamento
+    // Usa write_str diretamente para evitar overhead de format_args!
+    let _ = redpowder::console::write_str("[Firefly] ENTRY\n");
+
     println!("[Firefly] Compositor iniciando v0.0.1");
 
     // Inicializar e executar o servidor
